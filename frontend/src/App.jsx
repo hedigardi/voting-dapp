@@ -1,25 +1,25 @@
-import logo from './logo.svg';
-import './App.css';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Header from './components/Header';
+import AdminPanel from './pages/AdminPanel';
+import VotingPage from './pages/VotingPage';
+import ResultsPage from './pages/ResultsPage';
 
-function App() {
+const App = () => {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <Router>
+      <Header />
+      <Routes>
+        <Route path="/" element={<VotingPage sessionId={1} />} />
+        
+        <Route path="/voting/:sessionId" element={<VotingPage />} />
+        
+        <Route path="/admin" element={<AdminPanel />} />
+        
+        <Route path="/results" element={<ResultsPage />} />
+      </Routes>
+    </Router>
   );
-}
+};
 
 export default App;
