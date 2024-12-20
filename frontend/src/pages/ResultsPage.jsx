@@ -4,7 +4,7 @@ import { contractAddress, contractABI } from '../utils/contractConfig';
 
 const ResultsPage = () => {
   const [sessions, setSessions] = useState([]); 
-  const [error, setError] = useState(''); 
+  const [error, setError] = useState('');
   const [walletConnected, setWalletConnected] = useState(false); 
   const [loading, setLoading] = useState(false); 
 
@@ -49,10 +49,13 @@ const ResultsPage = () => {
         const isCompleted = currentTime > Number(session.endTime);
         const isNotStarted = currentTime < Number(session.startTime);
         let winner = null;
+        let isTie = false;
 
         if (isCompleted && candidates.length > 0) {
           try {
-            winner = await contract.methods.getWinner(i).call();
+            const result = await contract.methods.getWinner(i).call();
+            winner = result[0];
+            isTie = result[1];
           } catch (error) {
             console.error(`Error fetching winner for session ${i}:`, error.message);
           }
@@ -71,6 +74,7 @@ const ResultsPage = () => {
             ? 'Active'
             : 'Inactive',
           winner: candidates.length > 0 ? winner : 'No candidates',
+          isTie: candidates.length > 0 && isTie,
           candidates: candidates.map((candidate, index) => ({
             id: index,
             name: candidate.name,
@@ -88,7 +92,7 @@ const ResultsPage = () => {
 
       fetchedSessions.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
 
-      setSessions(fetchedSessions); // Update state with fetched sessions
+      setSessions(fetchedSessions);
       console.log('Sorted Sessions with Results:', fetchedSessions);
     } catch (err) {
       console.error('Error fetching results:', err);
@@ -125,7 +129,7 @@ const ResultsPage = () => {
           fetchResults();
         } else {
           setWalletConnected(false);
-          setSessions([]);
+          setSessions([]); 
         }
       });
     }
@@ -206,8 +210,13 @@ const ResultsPage = () => {
                       </ul>
                       {session.status === 'Completed' && (
                         <p className="text-success">
-                          <strong>Winner:</strong> {typeof session.winner === 'object' ? session.winner.winnerName : session.winner}
-                        </p>                      
+                          <strong>Winner:</strong>{' '}
+                          {session.isTie ? (
+                            <span className="text-danger">No clear winner (tie)</span>
+                          ) : (
+                            session.winner
+                          )}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -215,7 +224,9 @@ const ResultsPage = () => {
               ))}
             </div>
           ) : (
-            <div className="alert alert-info text-center">No sessions available.</div>
+            <div className="alert alert-info text-center">
+              No sessions available.
+            </div>
           )}
         </>
       )}

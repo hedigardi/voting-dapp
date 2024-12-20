@@ -3,11 +3,11 @@ import Web3 from 'web3';
 import { contractAddress, contractABI } from '../utils/contractConfig';
 
 const VotingPage = () => {
-  const [sessions, setSessions] = useState([]);
-  const [error, setError] = useState('');
-  const [walletConnected, setWalletConnected] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [userVotes, setUserVotes] = useState({});
+  const [sessions, setSessions] = useState([]); 
+  const [error, setError] = useState(''); 
+  const [walletConnected, setWalletConnected] = useState(false); 
+  const [loading, setLoading] = useState(false); 
+  const [userVotes, setUserVotes] = useState({}); 
 
   const connectWallet = async () => {
     try {
@@ -19,7 +19,7 @@ const VotingPage = () => {
       const accounts = await web3.eth.requestAccounts();
       console.log('Connected account:', accounts[0]);
       setWalletConnected(true);
-      await fetchSessions();
+      await fetchSessions(); 
     } catch (err) {
       handleError('Failed to connect wallet: ' + err.message);
     } finally {
@@ -86,7 +86,7 @@ const VotingPage = () => {
       });
 
       setSessions(filteredSessions);
-      setUserVotes(userVoteStatus);
+      setUserVotes(userVoteStatus); 
       console.log('Filtered and Sorted Sessions:', filteredSessions);
     } catch (err) {
       handleError('Failed to fetch sessions: ' + err.message);

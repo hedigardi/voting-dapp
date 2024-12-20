@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import "@openzeppelin/contracts/access/Ownable.sol"; 
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-
 
 contract VotingContract is Ownable, ReentrancyGuard {
     struct Candidate {
@@ -13,16 +12,16 @@ contract VotingContract is Ownable, ReentrancyGuard {
 
     struct VotingSession {
         uint id; 
-        string title; 
+        string title;
         uint startTime; 
-        uint endTime; 
+        uint endTime;
         Candidate[] candidates;
         mapping(address => bool) hasVoted;
         bool isActive;
         address creator;
     }
 
-    uint public sessionCount;
+    uint public sessionCount; 
     mapping(uint => VotingSession) public votingSessions;
 
     event VotingSessionCreated(

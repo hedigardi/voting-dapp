@@ -12,9 +12,9 @@ const AdminPanel = () => {
   const [candidateName, setCandidateName] = useState('');
   const [errorMessage, setErrorMessage] = useState(''); 
   const [successMessage, setSuccessMessage] = useState(''); 
-  const [walletConnected, setWalletConnected] = useState(false);
+  const [walletConnected, setWalletConnected] = useState(false); 
   const [currentAccount, setCurrentAccount] = useState(''); 
-  const [loading, setLoading] = useState(false); 
+  const [loading, setLoading] = useState(false);
 
   const handleError = (message) => {
     setErrorMessage(message);
@@ -40,7 +40,7 @@ const AdminPanel = () => {
       const accounts = await web3.eth.requestAccounts();
       setWalletConnected(true);
       setCurrentAccount(accounts[0]);
-      await fetchSessions(); // Fetch sessions after connecting
+      await fetchSessions(); 
     } catch (err) {
       handleError('Failed to connect wallet: ' + err.message);
     } finally {
@@ -269,7 +269,6 @@ const AdminPanel = () => {
           {successMessage && <div className="alert alert-success">{successMessage}</div>}
           {errorMessage && <div className="alert alert-danger">{errorMessage}</div>}
 
-          {/* Form to create a new voting session */}
           <div className="card mb-4">
             <div className="card-body">
               <h3 className="card-title">Create Voting Session</h3>
