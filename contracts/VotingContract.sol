@@ -1,29 +1,38 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+// Importing OpenZeppelin Libraries
+import "@openzeppelin/contracts/access/Ownable.sol"; // For ownership and access control
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol"; // For reentrancy protection
 
+/**
+ * @title VotingContract
+ * @dev A decentralized voting system allowing users to create, manage, and participate in voting sessions.
+ */
 contract VotingContract is Ownable, ReentrancyGuard {
+    // Struct to represent a candidate in the voting session
     struct Candidate {
-        string name; 
-        uint voteCount; 
+        string name; // Candidate's name
+        uint voteCount; // Number of votes received
     }
 
+    // Struct to represent a voting session
     struct VotingSession {
-        uint id; 
-        string title;
-        uint startTime; 
-        uint endTime;
-        Candidate[] candidates;
-        mapping(address => bool) hasVoted;
-        bool isActive;
-        address creator;
+        uint id; // Unique identifier for the session
+        string title; // Title of the voting session
+        uint startTime; // Start time of the session
+        uint endTime; // End time of the session
+        Candidate[] candidates; // List of candidates
+        mapping(address => bool) hasVoted; // Tracks if an address has voted
+        bool isActive; // Session status (active/inactive)
+        address creator; // Address of the session creator
     }
 
-    uint public sessionCount; 
-    mapping(uint => VotingSession) public votingSessions;
+    // Public variables
+    uint public sessionCount; // Counter for total sessions
+    mapping(uint => VotingSession) public votingSessions; // Mapping session IDs to VotingSession
 
+    // Events to track contract actions
     event VotingSessionCreated(
         address indexed creator,
         uint sessionId,
@@ -35,6 +44,7 @@ contract VotingContract is Ownable, ReentrancyGuard {
     event VoteCast(address indexed voter, uint indexed sessionId, uint candidateId);
     event SessionArchived(uint indexed sessionId);
 
+    // Modifier to ensure a function is called only during the voting period
     modifier onlyDuringVotingPeriod(uint sessionId) {
         require(
             block.timestamp >= votingSessions[sessionId].startTime &&
@@ -44,11 +54,13 @@ contract VotingContract is Ownable, ReentrancyGuard {
         _;
     }
 
+    // Modifier to ensure a voting session exists
     modifier sessionExists(uint sessionId) {
         require(votingSessions[sessionId].id == sessionId, "Session does not exist");
         _;
     }
 
+    // Modifier to restrict access to the session creator
     modifier onlySessionCreator(uint sessionId) {
         require(
             msg.sender == votingSessions[sessionId].creator,
@@ -57,8 +69,17 @@ contract VotingContract is Ownable, ReentrancyGuard {
         _;
     }
 
+    /**
+     * @dev Constructor to initialize the contract with the owner address.
+     */
     constructor() Ownable(msg.sender) {}
 
+    /**
+     * @notice Create a new voting session.
+     * @param title The title of the voting session.
+     * @param startTime The start time of the voting session (timestamp).
+     * @param endTime The end time of the voting session (timestamp).
+     */
     function createVotingSession(
         string memory title,
         uint startTime,
@@ -78,6 +99,11 @@ contract VotingContract is Ownable, ReentrancyGuard {
         sessionCount++;
     }
 
+    /**
+     * @notice Add a candidate to a voting session.
+     * @param sessionId The ID of the voting session.
+     * @param name The name of the candidate.
+     */
     function addCandidate(uint sessionId, string memory name)
         public
         sessionExists(sessionId)
@@ -93,6 +119,11 @@ contract VotingContract is Ownable, ReentrancyGuard {
         emit CandidateAdded(sessionId, name);
     }
 
+    /**
+     * @notice Cast a vote for a candidate in a session.
+     * @param sessionId The ID of the voting session.
+     * @param candidateId The ID of the candidate.
+     */
     function vote(uint sessionId, uint candidateId)
         public
         nonReentrant
@@ -109,6 +140,10 @@ contract VotingContract is Ownable, ReentrancyGuard {
         emit VoteCast(msg.sender, sessionId, candidateId);
     }
 
+    /**
+     * @notice Archive a voting session after it has ended.
+     * @param sessionId The ID of the voting session.
+     */
     function archiveSession(uint sessionId) public sessionExists(sessionId) {
         VotingSession storage session = votingSessions[sessionId];
         require(block.timestamp > session.endTime, "Cannot archive active session");
@@ -117,6 +152,11 @@ contract VotingContract is Ownable, ReentrancyGuard {
         emit SessionArchived(sessionId);
     }
 
+    /**
+     * @notice Retrieve all candidates in a session.
+     * @param sessionId The ID of the voting session.
+     * @return An array of Candidate structs.
+     */
     function getCandidates(uint sessionId)
         public
         view
@@ -126,6 +166,12 @@ contract VotingContract is Ownable, ReentrancyGuard {
         return votingSessions[sessionId].candidates;
     }
 
+    /**
+     * @notice Get the winner of a voting session.
+     * @param sessionId The ID of the voting session.
+     * @return winnerName The name of the winning candidate.
+     * @return isTie A boolean indicating if the session resulted in a tie.
+     */
     function getWinner(uint sessionId)
         public
         view
@@ -155,6 +201,12 @@ contract VotingContract is Ownable, ReentrancyGuard {
         return (winnerName, false);
     }
 
+    /**
+     * @notice Check if a user has voted in a session.
+     * @param sessionId The ID of the voting session.
+     * @param user The address of the user.
+     * @return A boolean indicating if the user has voted.
+     */
     function hasUserVoted(uint sessionId, address user)
         public
         view
@@ -164,6 +216,11 @@ contract VotingContract is Ownable, ReentrancyGuard {
         return votingSessions[sessionId].hasVoted[user];
     }
 
+    /**
+     * @notice Get the creator of a voting session.
+     * @param sessionId The ID of the voting session.
+     * @return The address of the session creator.
+     */
     function getSessionCreator(uint sessionId)
         public
         view

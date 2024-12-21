@@ -2,12 +2,20 @@ import React, { useEffect, useState } from 'react';
 import Web3 from 'web3';
 import { contractAddress, contractABI } from '../utils/contractConfig';
 
+/**
+ * ResultsPage component displays the results of completed voting sessions.
+ */
 const ResultsPage = () => {
-  const [sessions, setSessions] = useState([]); 
-  const [error, setError] = useState('');
-  const [walletConnected, setWalletConnected] = useState(false); 
-  const [loading, setLoading] = useState(false); 
+  // State variables
+  const [sessions, setSessions] = useState([]); // Stores fetched voting sessions
+  const [error, setError] = useState(''); // For displaying error messages
+  const [walletConnected, setWalletConnected] = useState(false); // Tracks wallet connection status
+  const [loading, setLoading] = useState(false); // Tracks loading state for displaying the spinner
 
+  /**
+   * Connects the user's wallet using MetaMask.
+   * Fetches the results after successful wallet connection.
+   */
   const connectWallet = async () => {
     try {
       if (!window.ethereum) {
@@ -18,7 +26,7 @@ const ResultsPage = () => {
       const accounts = await web3.eth.requestAccounts();
       console.log('Connected account:', accounts[0]);
       setWalletConnected(true);
-      await fetchResults(); 
+      await fetchResults(); // Fetch results after wallet connection
     } catch (err) {
       setError('Failed to connect wallet: ' + err.message);
     } finally {
@@ -26,6 +34,9 @@ const ResultsPage = () => {
     }
   };
 
+  /**
+   * Fetches voting results for all sessions from the smart contract.
+   */
   const fetchResults = async () => {
     try {
       if (!window.ethereum) {
@@ -51,6 +62,7 @@ const ResultsPage = () => {
         let winner = null;
         let isTie = false;
 
+        // Fetch winner details if the session is completed
         if (isCompleted && candidates.length > 0) {
           try {
             const result = await contract.methods.getWinner(i).call();
@@ -61,6 +73,7 @@ const ResultsPage = () => {
           }
         }
 
+        // Add session details to the array
         fetchedSessions.push({
           id: Number(session.id),
           title: session.title,
@@ -83,6 +96,7 @@ const ResultsPage = () => {
         });
       }
 
+      // Sort sessions by status
       const statusOrder = {
         Completed: 1,
         Active: 2,
@@ -92,7 +106,7 @@ const ResultsPage = () => {
 
       fetchedSessions.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
 
-      setSessions(fetchedSessions);
+      setSessions(fetchedSessions); // Update state with fetched sessions
       console.log('Sorted Sessions with Results:', fetchedSessions);
     } catch (err) {
       console.error('Error fetching results:', err);
@@ -102,6 +116,7 @@ const ResultsPage = () => {
     }
   };
 
+  // Check if the wallet is already connected on component mount
   useEffect(() => {
     const checkWalletConnection = async () => {
       if (window.ethereum) {
@@ -121,6 +136,7 @@ const ResultsPage = () => {
 
     checkWalletConnection();
 
+    // Listen for account changes in MetaMask
     if (window.ethereum) {
       window.ethereum.on('accountsChanged', (accounts) => {
         if (accounts.length > 0) {
@@ -129,11 +145,12 @@ const ResultsPage = () => {
           fetchResults();
         } else {
           setWalletConnected(false);
-          setSessions([]); 
+          setSessions([]); // Clear sessions if wallet is disconnected
         }
       });
     }
 
+    // Cleanup the listener on component unmount
     return () => {
       if (window.ethereum) {
         window.ethereum.removeListener('accountsChanged', fetchResults);
@@ -145,6 +162,7 @@ const ResultsPage = () => {
     <div className="container mt-5">
       <h1 className="text-center">Voting Results</h1>
 
+      {/* Loading modal */}
       {loading && (
         <div className="modal show d-block" tabIndex="-1">
           <div className="modal-dialog modal-dialog-centered">
@@ -160,6 +178,7 @@ const ResultsPage = () => {
         </div>
       )}
 
+      {/* Display wallet connection prompt */}
       {!walletConnected ? (
         <div className="text-center">
           <p>Connect your wallet to interact with the dApp.</p>
