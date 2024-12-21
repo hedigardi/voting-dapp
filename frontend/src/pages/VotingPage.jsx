@@ -2,13 +2,20 @@ import React, { useEffect, useState } from 'react';
 import Web3 from 'web3';
 import { contractAddress, contractABI } from '../utils/contractConfig';
 
+/**
+ * VotingPage component allows users to view active voting sessions and cast votes.
+ */
 const VotingPage = () => {
-  const [sessions, setSessions] = useState([]); 
-  const [error, setError] = useState(''); 
-  const [walletConnected, setWalletConnected] = useState(false); 
-  const [loading, setLoading] = useState(false); 
-  const [userVotes, setUserVotes] = useState({}); 
+  // State variables
+  const [sessions, setSessions] = useState([]); // Stores fetched voting sessions
+  const [error, setError] = useState(''); // For displaying error messages
+  const [walletConnected, setWalletConnected] = useState(false); // Tracks wallet connection status
+  const [loading, setLoading] = useState(false); // Tracks loading state for displaying the spinner
+  const [userVotes, setUserVotes] = useState({}); // Tracks user's voting status per session
 
+  /**
+   * Connects the user's wallet using MetaMask and fetches voting sessions.
+   */
   const connectWallet = async () => {
     try {
       if (!window.ethereum) {
@@ -19,7 +26,7 @@ const VotingPage = () => {
       const accounts = await web3.eth.requestAccounts();
       console.log('Connected account:', accounts[0]);
       setWalletConnected(true);
-      await fetchSessions(); 
+      await fetchSessions(); // Fetch sessions after wallet connection
     } catch (err) {
       handleError('Failed to connect wallet: ' + err.message);
     } finally {
@@ -27,6 +34,9 @@ const VotingPage = () => {
     }
   };
 
+  /**
+   * Fetches all voting sessions from the smart contract.
+   */
   const fetchSessions = async () => {
     try {
       if (!window.ethereum) {
@@ -76,17 +86,19 @@ const VotingPage = () => {
         });
       }
 
+      // Filter sessions to display only "Not Started" or "Active" sessions
       const filteredSessions = fetchedSessions.filter(
         (session) => session.status === 'Not Started' || session.status === 'Active'
       );
 
+      // Sort sessions by their status
       filteredSessions.sort((a, b) => {
         const statusOrder = { Active: 1, 'Not Started': 2 };
         return statusOrder[a.status] - statusOrder[b.status];
       });
 
-      setSessions(filteredSessions);
-      setUserVotes(userVoteStatus); 
+      setSessions(filteredSessions); // Update state with fetched sessions
+      setUserVotes(userVoteStatus); // Update user's vote status
       console.log('Filtered and Sorted Sessions:', filteredSessions);
     } catch (err) {
       handleError('Failed to fetch sessions: ' + err.message);
@@ -95,6 +107,11 @@ const VotingPage = () => {
     }
   };
 
+  /**
+   * Allows the user to vote for a candidate in a specified session.
+   * @param {number} sessionId - ID of the voting session
+   * @param {number} candidateId - ID of the candidate
+   */
   const voteForCandidate = async (sessionId, candidateId) => {
     try {
       setLoading(true);
@@ -113,7 +130,7 @@ const VotingPage = () => {
       const tx = await contract.methods.vote(sessionId, candidateId).send({ from: account });
       console.log('Vote transaction hash:', tx.transactionHash);
 
-      await fetchSessions();
+      await fetchSessions(); // Refresh sessions after voting
     } catch (err) {
       handleError('Failed to vote: ' + err.message);
     } finally {
@@ -121,6 +138,10 @@ const VotingPage = () => {
     }
   };
 
+  /**
+   * Displays an error message to the user.
+   * @param {string} message - Error message to display
+   */
   const handleError = (message) => {
     setError(message);
     setTimeout(() => {
@@ -128,10 +149,14 @@ const VotingPage = () => {
     }, 3000);
   };
 
+  /**
+   * Effect hook to connect the wallet and fetch sessions on component mount.
+   */
   useEffect(() => {
     connectWallet();
 
     if (window.ethereum) {
+      // Listen for account changes in MetaMask
       window.ethereum.on('accountsChanged', (accounts) => {
         console.log('Accounts changed:', accounts);
         if (accounts.length === 0) {
@@ -143,6 +168,7 @@ const VotingPage = () => {
       });
     }
 
+    // Cleanup listener on component unmount
     return () => {
       if (window.ethereum) {
         window.ethereum.removeListener('accountsChanged', fetchSessions);
@@ -154,6 +180,7 @@ const VotingPage = () => {
     <div className="container mt-5">
       <h1 className="text-center">Voting Page</h1>
 
+      {/* Loading modal */}
       {loading && (
         <div className="modal show d-block" tabIndex="-1">
           <div className="modal-dialog modal-dialog-centered">
@@ -169,6 +196,7 @@ const VotingPage = () => {
         </div>
       )}
 
+      {/* Display wallet connection prompt */}
       {!walletConnected ? (
         <div className="text-center">
           <p>Connect your wallet to interact with the dApp.</p>
@@ -235,6 +263,7 @@ const VotingPage = () => {
             </div>
           )}
 
+          {/* Legal Considerations */}
           <div className="card bg-light mb-4">
             <div className="card-body">
               <h5 className="card-title">Legal Considerations</h5>

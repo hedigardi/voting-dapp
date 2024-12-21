@@ -2,20 +2,25 @@ import React, { useState, useEffect } from 'react';
 import Web3 from 'web3';
 import { contractAddress, contractABI } from '../utils/contractConfig';
 
+/**
+ * AdminPanel component provides the interface for managing voting sessions and candidates.
+ */
 const AdminPanel = () => {
+  // State variables for managing inputs and app state
   const [title, setTitle] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
-  const [sessions, setSessions] = useState([]); 
-  const [candidatesBySession, setCandidatesBySession] = useState({}); 
+  const [sessions, setSessions] = useState([]); // Stores all voting sessions
+  const [candidatesBySession, setCandidatesBySession] = useState({}); // Maps session IDs to their candidates
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [candidateName, setCandidateName] = useState('');
-  const [errorMessage, setErrorMessage] = useState(''); 
-  const [successMessage, setSuccessMessage] = useState(''); 
-  const [walletConnected, setWalletConnected] = useState(false); 
-  const [currentAccount, setCurrentAccount] = useState(''); 
-  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(''); // For displaying error messages
+  const [successMessage, setSuccessMessage] = useState(''); // For displaying success messages
+  const [walletConnected, setWalletConnected] = useState(false); // Tracks wallet connection status
+  const [currentAccount, setCurrentAccount] = useState(''); // Stores the connected account
+  const [loading, setLoading] = useState(false); // Tracks loading state for displaying a spinner
 
+  // Utility function to handle error messages
   const handleError = (message) => {
     setErrorMessage(message);
     setTimeout(() => {
@@ -23,6 +28,7 @@ const AdminPanel = () => {
     }, 3000);
   };
 
+  // Utility function to handle success messages
   const handleSuccess = (message) => {
     setSuccessMessage(message);
     setTimeout(() => {
@@ -30,6 +36,9 @@ const AdminPanel = () => {
     }, 3000);
   };
 
+  /**
+   * Connects the user's wallet using MetaMask.
+   */
   const connectWallet = async () => {
     try {
       if (!window.ethereum) {
@@ -40,7 +49,7 @@ const AdminPanel = () => {
       const accounts = await web3.eth.requestAccounts();
       setWalletConnected(true);
       setCurrentAccount(accounts[0]);
-      await fetchSessions(); 
+      await fetchSessions(); // Fetch sessions after connecting
     } catch (err) {
       handleError('Failed to connect wallet: ' + err.message);
     } finally {
@@ -48,6 +57,9 @@ const AdminPanel = () => {
     }
   };
 
+  /**
+   * Creates a new voting session with the specified title and time range.
+   */
   const createSession = async () => {
     try {
       if (!title || !startTime || !endTime) {
@@ -68,12 +80,13 @@ const AdminPanel = () => {
 
       const contract = new web3.eth.Contract(contractABI, contractAddress);
 
+      // Call the smart contract method to create a session
       const tx = await contract.methods
         .createVotingSession(title, startTimeUnix, endTimeUnix)
         .send({ from: account });
       console.log('Session created. Transaction hash:', tx.transactionHash);
 
-      await fetchSessions(); 
+      await fetchSessions(); // Refresh sessions after creation
       handleSuccess('Voting session created successfully!');
     } catch (err) {
       console.error('Error creating session:', err);
@@ -83,6 +96,9 @@ const AdminPanel = () => {
     }
   };
 
+  /**
+   * Fetches candidates for a specific voting session.
+   */
   const fetchCandidates = async (sessionId) => {
     try {
       setLoading(true);
@@ -105,6 +121,9 @@ const AdminPanel = () => {
     }
   };
 
+  /**
+   * Fetches all voting sessions and their details.
+   */
   const fetchSessions = async () => {
     try {
       setLoading(true);
@@ -137,6 +156,7 @@ const AdminPanel = () => {
         });
       }
 
+      // Sort sessions by status
       fetchedSessions.sort((a, b) => {
         const statusOrder = {
           Active: 1,
@@ -148,6 +168,7 @@ const AdminPanel = () => {
 
       setSessions(fetchedSessions);
 
+      // Fetch candidates for each session
       for (const session of fetchedSessions) {
         fetchCandidates(session.id);
       }
@@ -159,6 +180,9 @@ const AdminPanel = () => {
     }
   };
 
+  /**
+   * Adds a new candidate to a specific voting session.
+   */
   const addCandidate = async () => {
     try {
       if (!selectedSessionId || candidateName.trim() === '') {
@@ -214,6 +238,7 @@ const AdminPanel = () => {
     }
   };     
 
+  // Effect to connect wallet and fetch sessions on component mount
   useEffect(() => {
     connectWallet();
 
@@ -240,6 +265,7 @@ const AdminPanel = () => {
     <div className="container mt-5">
       <h1 className="text-center">Admin Panel</h1>
 
+      {/* Loading Modal */}
       {loading && (
         <div className="modal show d-block" tabIndex="-1">
           <div className="modal-dialog modal-dialog-centered">
@@ -255,6 +281,7 @@ const AdminPanel = () => {
         </div>
       )}
 
+      {/* Wallet not connected view */}
       {!walletConnected && (
         <div className="text-center">
           <p>Connect your wallet to interact with the dApp.</p>
@@ -264,11 +291,13 @@ const AdminPanel = () => {
         </div>
       )}
 
+      {/* Main content when wallet is connected */}
       {walletConnected && (
         <>
           {successMessage && <div className="alert alert-success">{successMessage}</div>}
           {errorMessage && <div className="alert alert-danger">{errorMessage}</div>}
 
+          {/* Form to create a new voting session */}
           <div className="card mb-4">
             <div className="card-body">
               <h3 className="card-title">Create Voting Session</h3>
@@ -303,6 +332,7 @@ const AdminPanel = () => {
             </div>
           </div>
 
+          {/* Form to add candidates */}
           <div className="card mb-4">
             <div className="card-body">
               <h3 className="card-title">Add Candidate</h3>
@@ -338,6 +368,7 @@ const AdminPanel = () => {
             </div>
           </div>
 
+          {/* List of sessions and their candidates */}
           <div className="card">
             <div className="card-body">
               <h3 className="card-title">Sessions and Candidates</h3>
