@@ -1,6 +1,37 @@
-import React, { useEffect, useState } from 'react';
-import Web3 from 'web3';
-import { contractAddress, contractABI } from '../utils/contractConfig';
+import React, { useCallback, useEffect, useState } from "react";
+import { useWallet } from "../hooks/useWallet";
+import { getContract, SEPOLIA_CHAIN_ID_HEX } from "../utils/web3";
+
+const formatTimestamp = (timestamp) =>
+  new Date(timestamp * 1000).toLocaleString();
+
+const deriveSessionStatus = ({ session, currentTime, candidateCount }) => {
+  if (!session.isActive) return "Inactive";
+  if (currentTime > Number(session.endTime)) return "Completed";
+  if (currentTime < Number(session.startTime)) return "Not Started";
+  if (candidateCount === 0) return "Not Ready";
+  return "Active";
+};
+
+const getStatusTone = (status) => {
+  if (status === "Completed") {
+    return "status-pill status-pill-done";
+  }
+
+  if (status === "Active") {
+    return "status-pill status-pill-live";
+  }
+
+  if (status === "Not Started") {
+    return "status-pill status-pill-upcoming";
+  }
+
+  if (status === "Not Ready") {
+    return "status-pill status-pill-neutral";
+  }
+
+  return "status-pill status-pill-neutral";
+};
 
 /**
  * ResultsPage component displays the results of completed voting sessions.
@@ -8,47 +39,25 @@ import { contractAddress, contractABI } from '../utils/contractConfig';
 const ResultsPage = () => {
   // State variables
   const [sessions, setSessions] = useState([]); // Stores fetched voting sessions
-  const [error, setError] = useState(''); // For displaying error messages
-  const [walletConnected, setWalletConnected] = useState(false); // Tracks wallet connection status
+  const [error, setError] = useState(""); // For displaying error messages
   const [loading, setLoading] = useState(false); // Tracks loading state for displaying the spinner
-
-  /**
-   * Connects the user's wallet using MetaMask.
-   * Fetches the results after successful wallet connection.
-   */
-  const connectWallet = async () => {
-    try {
-      if (!window.ethereum) {
-        throw new Error('MetaMask is not installed.');
-      }
-      setLoading(true);
-      const web3 = new Web3(window.ethereum);
-      const accounts = await web3.eth.requestAccounts();
-      console.log('Connected account:', accounts[0]);
-      setWalletConnected(true);
-      await fetchResults(); // Fetch results after wallet connection
-    } catch (err) {
-      setError('Failed to connect wallet: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const {
+    walletConnected,
+    account,
+    walletError,
+    isWrongNetwork,
+    connectWallet,
+  } = useWallet();
 
   /**
    * Fetches voting results for all sessions from the smart contract.
    */
-  const fetchResults = async () => {
+  const fetchResults = useCallback(async () => {
     try {
-      if (!window.ethereum) {
-        throw new Error('MetaMask is not installed.');
-      }
-
       setLoading(true);
-      const web3 = new Web3(window.ethereum);
-      const contract = new web3.eth.Contract(contractABI, contractAddress);
+      const contract = getContract();
 
       const sessionCount = await contract.methods.sessionCount().call();
-      console.log('Total Sessions:', sessionCount);
 
       const currentTime = Math.floor(Date.now() / 1000);
       const fetchedSessions = [];
@@ -56,9 +65,12 @@ const ResultsPage = () => {
       for (let i = 0; i < sessionCount; i++) {
         const session = await contract.methods.votingSessions(i).call();
         const candidates = await contract.methods.getCandidates(i).call();
-
-        const isCompleted = currentTime > Number(session.endTime);
-        const isNotStarted = currentTime < Number(session.startTime);
+        const status = deriveSessionStatus({
+          session,
+          currentTime,
+          candidateCount: candidates.length,
+        });
+        const isCompleted = status === "Completed";
         let winner = null;
         let isTie = false;
 
@@ -69,7 +81,10 @@ const ResultsPage = () => {
             winner = result[0];
             isTie = result[1];
           } catch (error) {
-            console.error(`Error fetching winner for session ${i}:`, error.message);
+            console.error(
+              `Error fetching winner for session ${i}:`,
+              error.message,
+            );
           }
         }
 
@@ -79,14 +94,8 @@ const ResultsPage = () => {
           title: session.title,
           startTime: Number(session.startTime),
           endTime: Number(session.endTime),
-          status: isCompleted
-            ? 'Completed'
-            : isNotStarted
-            ? 'Not Started'
-            : session.isActive
-            ? 'Active'
-            : 'Inactive',
-          winner: candidates.length > 0 ? winner : 'No candidates',
+          status,
+          winner: candidates.length > 0 ? winner : "No candidates",
           isTie: candidates.length > 0 && isTie,
           candidates: candidates.map((candidate, index) => ({
             id: index,
@@ -96,156 +105,241 @@ const ResultsPage = () => {
         });
       }
 
-      // Sort sessions by status
-      const statusOrder = {
-        Completed: 1,
-        Active: 2,
-        'Not Started': 3,
-        Inactive: 4,
-      };
-
-      fetchedSessions.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
+      // Sort sessions by recency: newest first, oldest last.
+      fetchedSessions.sort(
+        (a, b) =>
+          b.endTime - a.endTime || b.startTime - a.startTime || b.id - a.id,
+      );
 
       setSessions(fetchedSessions); // Update state with fetched sessions
-      console.log('Sorted Sessions with Results:', fetchedSessions);
     } catch (err) {
-      console.error('Error fetching results:', err);
-      setError('Failed to fetch results: ' + err.message);
+      console.error("Error fetching results:", err);
+      setError("Failed to fetch results: " + err.message);
     } finally {
       setLoading(false);
     }
-  };
-
-  // Check if the wallet is already connected on component mount
-  useEffect(() => {
-    const checkWalletConnection = async () => {
-      if (window.ethereum) {
-        try {
-          const web3 = new Web3(window.ethereum);
-          const accounts = await web3.eth.getAccounts();
-          if (accounts.length > 0) {
-            console.log('Wallet is already connected:', accounts[0]);
-            setWalletConnected(true);
-            await fetchResults();
-          }
-        } catch (err) {
-          console.error('Error checking wallet connection:', err.message);
-        }
-      }
-    };
-
-    checkWalletConnection();
-
-    // Listen for account changes in MetaMask
-    if (window.ethereum) {
-      window.ethereum.on('accountsChanged', (accounts) => {
-        if (accounts.length > 0) {
-          console.log('Account changed:', accounts[0]);
-          setWalletConnected(true);
-          fetchResults();
-        } else {
-          setWalletConnected(false);
-          setSessions([]); // Clear sessions if wallet is disconnected
-        }
-      });
-    }
-
-    // Cleanup the listener on component unmount
-    return () => {
-      if (window.ethereum) {
-        window.ethereum.removeListener('accountsChanged', fetchResults);
-      }
-    };
   }, []);
 
-  return (
-    <div className="container mt-5">
-      <h1 className="text-center">Voting Results</h1>
+  useEffect(() => {
+    if (!walletConnected || !account || isWrongNetwork) {
+      setSessions([]);
+      return;
+    }
 
-      {/* Loading modal */}
+    fetchResults();
+  }, [walletConnected, account, isWrongNetwork, fetchResults]);
+
+  useEffect(() => {
+    if (walletError) {
+      setError(walletError);
+    }
+  }, [walletError]);
+
+  const completedSessions = sessions.filter(
+    (session) => session.status === "Completed",
+  );
+  const liveSessions = sessions.filter(
+    (session) => session.status === "Active",
+  );
+  const tiedSessions = sessions.filter((session) => session.isTie);
+
+  return (
+    <div className="container page-shell">
+      <section className="page-hero page-hero-results">
+        <div>
+          <p className="page-kicker">Outcome review</p>
+          <h1 className="page-title">
+            Read results like a live election dashboard.
+          </h1>
+          <p className="page-subtitle">
+            Compare sessions, inspect candidate vote totals, and quickly spot
+            ties or still-active polls without digging through raw contract
+            data.
+          </p>
+        </div>
+        <div className="summary-grid">
+          <div className="summary-card">
+            <span className="summary-label">Completed</span>
+            <strong>{completedSessions.length}</strong>
+            <span className="summary-footnote">Finalized sessions</span>
+          </div>
+          <div className="summary-card">
+            <span className="summary-label">Live</span>
+            <strong>{liveSessions.length}</strong>
+            <span className="summary-footnote">Still receiving votes</span>
+          </div>
+          <div className="summary-card">
+            <span className="summary-label">Ties</span>
+            <strong>{tiedSessions.length}</strong>
+            <span className="summary-footnote">Needs follow-up governance</span>
+          </div>
+        </div>
+      </section>
+
       {loading && (
-        <div className="modal show d-block" tabIndex="-1">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-body text-center">
-                <div className="spinner-border text-primary" role="status">
-                  <span className="visually-hidden">Loading...</span>
-                </div>
-                <p className="mt-3">Loading, please wait...</p>
-              </div>
+        <div className="app-loading-overlay" role="status" aria-live="polite">
+          <div className="app-loading-card">
+            <div className="spinner-border text-primary" role="status">
+              <span className="visually-hidden">Loading...</span>
             </div>
+            <p>Calculating current results from contract state...</p>
           </div>
         </div>
       )}
 
-      {/* Display wallet connection prompt */}
       {!walletConnected ? (
-        <div className="text-center">
-          <p>Connect your wallet to interact with the dApp.</p>
-          <button className="btn btn-primary" onClick={connectWallet}>
-            Connect Wallet
-          </button>
-        </div>
+        <section className="connect-panel">
+          <div>
+            <p className="page-kicker">Viewer access</p>
+            <h2>Connect a wallet to inspect session outcomes.</h2>
+            <p>
+              Result cards are loaded from the contract and reflect the same
+              data any observer can verify on Sepolia.
+            </p>
+          </div>
+          <div className="connect-panel-side">
+            <button
+              className="btn btn-primary btn-lg app-cta"
+              onClick={connectWallet}
+            >
+              <svg
+                className="app-wallet-icon"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
+                <path d="M1 10h22" />
+                <rect x="16" y="14" width="4" height="4" rx="1" />
+              </svg>
+              Connect Wallet
+            </button>
+          </div>
+        </section>
       ) : (
         <>
           {error && <div className="alert alert-danger">{error}</div>}
+
+          {isWrongNetwork && (
+            <div className="alert alert-warning">
+              Switch wallet network to Sepolia ({SEPOLIA_CHAIN_ID_HEX}) to view
+              accurate results.
+            </div>
+          )}
+
           {sessions.length > 0 ? (
-            <div className="row">
+            <section className="session-grid">
               {sessions.map((session) => (
-                <div className="col-md-6 mb-4" key={session.id}>
-                  <div className="card">
-                    <div className="card-body">
-                      <h3 className="card-title">
-                        {session.title}{' '}
-                        <span
-                          className={`badge bg-${
-                            session.status === 'Completed'
-                              ? 'success'
-                              : session.status === 'Active'
-                              ? 'info'
-                              : 'secondary'
-                          }`}
-                        >
-                          {session.status}
-                        </span>
-                      </h3>
-                      <p>
-                        <strong>Start:</strong> {new Date(session.startTime * 1000).toLocaleString()}
-                        <br />
-                        <strong>End:</strong> {new Date(session.endTime * 1000).toLocaleString()}
+                <article className="session-card" key={session.id}>
+                  <div className="session-card-top">
+                    <div>
+                      <p className="session-eyebrow">
+                        Session #{session.id + 1}
                       </p>
-                      <ul className="list-group mb-3">
-                        {session.candidates.map((candidate) => (
-                          <li
-                            className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
-                            key={candidate.id}
-                          >
-                            {candidate.name}
-                            <span className="badge bg-primary">
-                              {candidate.votes} {candidate.votes === 1 ? 'vote' : 'votes'}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                      {session.status === 'Completed' && (
-                        <p className="text-success">
-                          <strong>Winner:</strong>{' '}
-                          {session.isTie ? (
-                            <span className="text-danger">No clear winner (tie)</span>
-                          ) : (
-                            session.winner
-                          )}
-                        </p>
-                      )}
+                      <h3>{session.title}</h3>
+                    </div>
+                    <span className={getStatusTone(session.status)}>
+                      {session.status}
+                    </span>
+                  </div>
+
+                  <div className="session-meta-grid">
+                    <div>
+                      <span className="wallet-label">Start</span>
+                      <strong>{formatTimestamp(session.startTime)}</strong>
+                    </div>
+                    <div>
+                      <span className="wallet-label">End</span>
+                      <strong>{formatTimestamp(session.endTime)}</strong>
+                    </div>
+                    <div>
+                      <span className="wallet-label">Candidates</span>
+                      <strong>{session.candidates.length}</strong>
                     </div>
                   </div>
-                </div>
+
+                  <div className="candidate-stack">
+                    {session.candidates.map((candidate) => {
+                      const topVotes = Math.max(
+                        ...session.candidates.map((entry) => entry.votes),
+                        1,
+                      );
+                      const width = `${Math.max(
+                        (candidate.votes / topVotes) * 100,
+                        candidate.votes > 0 ? 12 : 0,
+                      )}%`;
+
+                      return (
+                        <div className="results-row" key={candidate.id}>
+                          <div className="results-row-head">
+                            <strong>{candidate.name}</strong>
+                            <span className="candidate-meta">
+                              {candidate.votes}{" "}
+                              {candidate.votes === 1 ? "vote" : "votes"}
+                            </span>
+                          </div>
+                          <div className="results-bar-track">
+                            <span
+                              className="results-bar-fill"
+                              style={{ width }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {session.status === "Completed" &&
+                    (() => {
+                      const isNoCandidates = session.candidates.length === 0;
+                      const isTie = !isNoCandidates && session.isTie;
+
+                      const toneClass = isNoCandidates
+                        ? "results-outcome-banner-empty"
+                        : isTie
+                          ? "results-outcome-banner-tie"
+                          : "results-outcome-banner-winner";
+
+                      const label = isNoCandidates
+                        ? "No candidates"
+                        : isTie
+                          ? "Tie detected"
+                          : "Winner";
+
+                      const value = isNoCandidates
+                        ? "No candidates available"
+                        : isTie
+                          ? "No clear winner"
+                          : session.winner;
+
+                      return (
+                        <div
+                          className={`results-outcome-banner ${toneClass}`}
+                          role="status"
+                        >
+                          <span className="results-outcome-label">{label}</span>
+                          <strong className="results-outcome-value">
+                            {value}
+                          </strong>
+                        </div>
+                      );
+                    })()}
+                </article>
               ))}
-            </div>
+            </section>
           ) : (
-            <div className="alert alert-info text-center">
-              No sessions available.
-            </div>
+            <section className="empty-state-panel">
+              <h3>No result data available yet</h3>
+              <p>
+                Completed, upcoming, and live sessions will appear here after
+                the contract reports them.
+              </p>
+            </section>
           )}
         </>
       )}

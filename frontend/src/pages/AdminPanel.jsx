@@ -1,110 +1,66 @@
-import React, { useState, useEffect } from 'react';
-import Web3 from 'web3';
-import { contractAddress, contractABI } from '../utils/contractConfig';
+import React, { useCallback, useEffect, useState } from "react";
+import { useWallet } from "../hooks/useWallet";
+import {
+  getContract,
+  SEPOLIA_CHAIN_ID_HEX,
+  shortenAddress,
+} from "../utils/web3";
 
-/**
- * AdminPanel component provides the interface for managing voting sessions and candidates.
- */
+const formatTimestamp = (timestamp) =>
+  new Date(timestamp * 1000).toLocaleString();
+
+const deriveSessionStatus = ({ session, currentTime, candidateCount }) => {
+  if (!session.isActive) return "Inactive";
+  if (currentTime > Number(session.endTime)) return "Completed";
+  if (currentTime < Number(session.startTime)) return "Not Started";
+  if (candidateCount === 0) return "Not Ready";
+  return "Active";
+};
+
+const getStatusTone = (status) => {
+  if (status === "Active") return "status-pill status-pill-live";
+  if (status === "Not Started") return "status-pill status-pill-upcoming";
+  if (status === "Completed") return "status-pill status-pill-done";
+  return "status-pill status-pill-neutral";
+};
+
 const AdminPanel = () => {
-  // State variables for managing inputs and app state
-  const [title, setTitle] = useState('');
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
-  const [sessions, setSessions] = useState([]); // Stores all voting sessions
-  const [candidatesBySession, setCandidatesBySession] = useState({}); // Maps session IDs to their candidates
-  const [selectedSessionId, setSelectedSessionId] = useState(null);
-  const [candidateName, setCandidateName] = useState('');
-  const [errorMessage, setErrorMessage] = useState(''); // For displaying error messages
-  const [successMessage, setSuccessMessage] = useState(''); // For displaying success messages
-  const [walletConnected, setWalletConnected] = useState(false); // Tracks wallet connection status
-  const [currentAccount, setCurrentAccount] = useState(''); // Stores the connected account
-  const [loading, setLoading] = useState(false); // Tracks loading state for displaying a spinner
+  const [title, setTitle] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [sessions, setSessions] = useState([]);
+  const [candidatesBySession, setCandidatesBySession] = useState({});
+  const [selectedSessionId, setSelectedSessionId] = useState("");
+  const [candidateName, setCandidateName] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [feedbackTarget, setFeedbackTarget] = useState("global");
+  const [loading, setLoading] = useState(false);
+  const {
+    walletConnected,
+    account,
+    walletError,
+    isWrongNetwork,
+    connectWallet,
+  } = useWallet();
 
-  // Utility function to handle error messages
-  const handleError = (message) => {
+  const handleError = (message, target = "global") => {
+    setSuccessMessage("");
     setErrorMessage(message);
-    setTimeout(() => {
-      setErrorMessage('');
-    }, 3000);
+    setFeedbackTarget(target);
+    setTimeout(() => setErrorMessage(""), 3000);
   };
 
-  // Utility function to handle success messages
-  const handleSuccess = (message) => {
+  const handleSuccess = (message, target = "global") => {
+    setErrorMessage("");
     setSuccessMessage(message);
-    setTimeout(() => {
-      setSuccessMessage('');
-    }, 3000);
+    setFeedbackTarget(target);
+    setTimeout(() => setSuccessMessage(""), 3000);
   };
 
-  /**
-   * Connects the user's wallet using MetaMask.
-   */
-  const connectWallet = async () => {
+  const fetchCandidates = useCallback(async (sessionId) => {
     try {
-      if (!window.ethereum) {
-        throw new Error('MetaMask is not installed.');
-      }
-      setLoading(true);
-      const web3 = new Web3(window.ethereum);
-      const accounts = await web3.eth.requestAccounts();
-      setWalletConnected(true);
-      setCurrentAccount(accounts[0]);
-      await fetchSessions(); // Fetch sessions after connecting
-    } catch (err) {
-      handleError('Failed to connect wallet: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /**
-   * Creates a new voting session with the specified title and time range.
-   */
-  const createSession = async () => {
-    try {
-      if (!title || !startTime || !endTime) {
-        throw new Error('All fields are required to create a session.');
-      }
-
-      setLoading(true);
-      const web3 = new Web3(window.ethereum);
-      const accounts = await web3.eth.getAccounts();
-      const account = accounts[0];
-
-      const startTimeUnix = Math.floor(new Date(startTime).getTime() / 1000);
-      const endTimeUnix = Math.floor(new Date(endTime).getTime() / 1000);
-
-      if (startTimeUnix >= endTimeUnix) {
-        throw new Error('Start time must be before end time.');
-      }
-
-      const contract = new web3.eth.Contract(contractABI, contractAddress);
-
-      // Call the smart contract method to create a session
-      const tx = await contract.methods
-        .createVotingSession(title, startTimeUnix, endTimeUnix)
-        .send({ from: account });
-      console.log('Session created. Transaction hash:', tx.transactionHash);
-
-      await fetchSessions(); // Refresh sessions after creation
-      handleSuccess('Voting session created successfully!');
-    } catch (err) {
-      console.error('Error creating session:', err);
-      handleError('Failed to create session: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /**
-   * Fetches candidates for a specific voting session.
-   */
-  const fetchCandidates = async (sessionId) => {
-    try {
-      setLoading(true);
-      const web3 = new Web3(window.ethereum);
-      const contract = new web3.eth.Contract(contractABI, contractAddress);
-
+      const contract = getContract();
       const candidates = await contract.methods.getCandidates(sessionId).call();
       setCandidatesBySession((prev) => ({
         ...prev,
@@ -116,20 +72,13 @@ const AdminPanel = () => {
       }));
     } catch (err) {
       console.error(`Error fetching candidates for session ${sessionId}:`, err);
-    } finally {
-      setLoading(false);
     }
-  };
+  }, []);
 
-  /**
-   * Fetches all voting sessions and their details.
-   */
-  const fetchSessions = async () => {
+  const fetchSessions = useCallback(async () => {
     try {
       setLoading(true);
-      const web3 = new Web3(window.ethereum);
-      const contract = new web3.eth.Contract(contractABI, contractAddress);
-
+      const contract = getContract();
       const sessionCount = await contract.methods.sessionCount().call();
       const currentTime = Math.floor(Date.now() / 1000);
       const fetchedSessions = [];
@@ -137,288 +86,522 @@ const AdminPanel = () => {
       for (let i = 0; i < sessionCount; i++) {
         const session = await contract.methods.votingSessions(i).call();
         const creator = await contract.methods.getSessionCreator(i).call();
-        const isCompleted = currentTime > Number(session.endTime);
-        const isNotStarted = currentTime < Number(session.startTime);
+        const candidates = await contract.methods.getCandidates(i).call();
+        const status = deriveSessionStatus({
+          session,
+          currentTime,
+          candidateCount: candidates.length,
+        });
 
         fetchedSessions.push({
           id: Number(session.id),
           title: session.title,
           startTime: Number(session.startTime),
           endTime: Number(session.endTime),
-          status: isCompleted
-            ? 'Completed'
-            : isNotStarted
-            ? 'Not Started'
-            : session.isActive
-            ? 'Active'
-            : 'Inactive',
+          status,
           creator,
         });
       }
 
-      // Sort sessions by status
-      fetchedSessions.sort((a, b) => {
-        const statusOrder = {
-          Active: 1,
-          'Not Started': 2,
-          Completed: 3,
-        };
-        return statusOrder[a.status] - statusOrder[b.status];
-      });
+      // Sort sessions by recency: newest first, oldest last.
+      fetchedSessions.sort(
+        (a, b) =>
+          b.endTime - a.endTime || b.startTime - a.startTime || b.id - a.id,
+      );
 
       setSessions(fetchedSessions);
-
-      // Fetch candidates for each session
-      for (const session of fetchedSessions) {
-        fetchCandidates(session.id);
-      }
+      await Promise.all(
+        fetchedSessions.map((session) => fetchCandidates(session.id)),
+      );
     } catch (err) {
-      console.error('Error fetching sessions:', err);
-      handleError('Failed to fetch sessions: ' + err.message);
+      console.error("Error fetching sessions:", err);
+      handleError("Failed to fetch sessions: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchCandidates]);
+
+  const createSession = async () => {
+    try {
+      if (!title || !startTime || !endTime) {
+        throw new Error("All fields are required to create a session.");
+      }
+
+      setLoading(true);
+
+      const startTimeUnix = Math.floor(new Date(startTime).getTime() / 1000);
+      const endTimeUnix = Math.floor(new Date(endTime).getTime() / 1000);
+
+      if (startTimeUnix >= endTimeUnix) {
+        throw new Error("Start time must be before end time.");
+      }
+
+      const contract = getContract();
+      await contract.methods
+        .createVotingSession(title, startTimeUnix, endTimeUnix)
+        .send({ from: account });
+
+      setTitle("");
+      setStartTime("");
+      setEndTime("");
+
+      await fetchSessions();
+      handleSuccess("Voting session created successfully!", "create");
+    } catch (err) {
+      console.error("Error creating session:", err);
+      handleError("Failed to create session: " + err.message, "create");
     } finally {
       setLoading(false);
     }
   };
 
-  /**
-   * Adds a new candidate to a specific voting session.
-   */
   const addCandidate = async () => {
     try {
-      if (!selectedSessionId || candidateName.trim() === '') {
-        throw new Error('Please select a valid session and enter a candidate name.');
+      if (!selectedSessionId || candidateName.trim() === "") {
+        throw new Error(
+          "Please select a valid session and enter a candidate name.",
+        );
       }
-  
+
       setLoading(true);
-  
+
       const sessionId = Number(selectedSessionId);
-      if (isNaN(sessionId)) {
-        throw new Error('Invalid session ID.');
+      if (Number.isNaN(sessionId)) {
+        throw new Error("Invalid session ID.");
       }
-  
-      const selectedSession = sessions.find((session) => session.id === sessionId);
+
+      const selectedSession = sessions.find(
+        (session) => session.id === sessionId,
+      );
       if (!selectedSession) {
-        throw new Error('Selected session does not exist.');
+        throw new Error("Selected session does not exist.");
       }
-  
+
       const currentTime = Math.floor(Date.now() / 1000);
-  
       if (currentTime > selectedSession.endTime) {
-        throw new Error('You cannot add a candidate to a voting session that has already ended.');
+        throw new Error(
+          "You cannot add a candidate to a voting session that has already ended.",
+        );
       }
-  
-      if (currentTime >= selectedSession.startTime && currentTime <= selectedSession.endTime) {
-        throw new Error('Candidates cannot be added during the voting period.');
+
+      if (
+        currentTime >= selectedSession.startTime &&
+        currentTime <= selectedSession.endTime
+      ) {
+        throw new Error("Candidates cannot be added during the voting period.");
       }
-  
-      if (selectedSession.creator.toLowerCase() !== currentAccount.toLowerCase()) {
-        throw new Error('Only the creator of this voting session can add candidates.');
+
+      if (selectedSession.creator.toLowerCase() !== account.toLowerCase()) {
+        throw new Error(
+          "Only the creator of this voting session can add candidates.",
+        );
       }
-  
-      const web3 = new Web3(window.ethereum);
-      const accounts = await web3.eth.getAccounts();
-      const account = accounts[0];
-      const contract = new web3.eth.Contract(contractABI, contractAddress);
-  
-      const tx = await contract.methods
+
+      const contract = getContract();
+      await contract.methods
         .addCandidate(sessionId, candidateName)
         .send({ from: account });
-  
-      console.log('Candidate added. Transaction hash:', tx.transactionHash);
-  
-      setCandidateName('');
-      await fetchCandidates(sessionId); 
-      handleSuccess('Candidate added successfully!');
+
+      setCandidateName("");
+      await fetchCandidates(sessionId);
+      handleSuccess("Candidate added successfully!", "candidate");
     } catch (err) {
-      console.error('Error adding candidate:', err);
-  
-      handleError(err.message);
+      console.error("Error adding candidate:", err);
+      handleError(err.message, "candidate");
     } finally {
       setLoading(false);
     }
-  };     
+  };
 
-  // Effect to connect wallet and fetch sessions on component mount
   useEffect(() => {
-    connectWallet();
-
-    if (window.ethereum) {
-      window.ethereum.on('accountsChanged', (accounts) => {
-        if (accounts.length > 0) {
-          setCurrentAccount(accounts[0]);
-          fetchSessions();
-        } else {
-          setWalletConnected(false);
-          setCurrentAccount('');
-        }
-      });
+    if (!walletConnected || !account || isWrongNetwork) {
+      setSessions([]);
+      setCandidatesBySession({});
+      return;
     }
 
-    return () => {
-      if (window.ethereum && window.ethereum.removeListener) {
-        window.ethereum.removeListener('accountsChanged', () => {});
-      }
-    };
-  }, []);
+    fetchSessions();
+  }, [walletConnected, account, isWrongNetwork, fetchSessions]);
+
+  useEffect(() => {
+    if (walletError) {
+      handleError(walletError, "global");
+    }
+  }, [walletError]);
+
+  const managedSessions = sessions.filter(
+    (session) => session.creator.toLowerCase() === account.toLowerCase(),
+  );
+  const liveSessions = sessions.filter(
+    (session) => session.status === "Active",
+  );
+  const draftSessions = sessions.filter(
+    (session) => session.status === "Not Started",
+  );
 
   return (
-    <div className="container mt-5">
-      <h1 className="text-center">Admin Panel</h1>
+    <div className="container page-shell">
+      <section className="page-hero page-hero-admin">
+        <div>
+          <p className="page-kicker">Governance studio</p>
+          <h1 className="page-title">Shape sessions before voters arrive.</h1>
+          <p className="page-subtitle">
+            Create voting windows, prepare candidate slates, and monitor which
+            sessions are live, upcoming, or already locked in history.
+          </p>
+        </div>
+        <div className="summary-grid">
+          <div className="summary-card">
+            <span className="summary-label">Managed by you</span>
+            <strong>{managedSessions.length}</strong>
+            <span className="summary-footnote">Sessions from this wallet</span>
+          </div>
+          <div className="summary-card">
+            <span className="summary-label">Upcoming</span>
+            <strong>{draftSessions.length}</strong>
+            <span className="summary-footnote">Ready for candidate setup</span>
+          </div>
+          <div className="summary-card">
+            <span className="summary-label">Live polls</span>
+            <strong>{liveSessions.length}</strong>
+            <span className="summary-footnote">Currently collecting votes</span>
+          </div>
+        </div>
+      </section>
 
-      {/* Loading Modal */}
       {loading && (
-        <div className="modal show d-block" tabIndex="-1">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-body text-center">
-                <div className="spinner-border text-primary" role="status">
-                  <span className="visually-hidden">Loading...</span>
-                </div>
-                <p className="mt-3">Processing, please wait...</p>
-              </div>
+        <div className="app-loading-overlay" role="status" aria-live="polite">
+          <div className="app-loading-card">
+            <div className="spinner-border text-primary" role="status">
+              <span className="visually-hidden">Loading...</span>
             </div>
+            <p>Syncing admin actions with the contract...</p>
           </div>
         </div>
       )}
 
-      {/* Wallet not connected view */}
-      {!walletConnected && (
-        <div className="text-center">
-          <p>Connect your wallet to interact with the dApp.</p>
-          <button className="btn btn-primary" onClick={connectWallet}>
-            Connect Wallet
-          </button>
-        </div>
-      )}
-
-      {/* Main content when wallet is connected */}
-      {walletConnected && (
+      {!walletConnected ? (
+        <section className="connect-panel">
+          <div>
+            <p className="page-kicker">Admin access</p>
+            <h2>Connect the creator wallet to manage governance.</h2>
+            <p>
+              Session creation and candidate management are permissioned by the
+              connected account, so this page only becomes actionable after your
+              wallet is connected.
+            </p>
+          </div>
+          <div className="connect-panel-side">
+            <button
+              className="btn btn-primary btn-lg app-cta"
+              onClick={connectWallet}
+            >
+              <svg
+                className="app-wallet-icon"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
+                <path d="M1 10h22" />
+                <rect x="16" y="14" width="4" height="4" rx="1" />
+              </svg>
+              Connect Wallet
+            </button>
+            <p className="connect-panel-note">
+              Use the same wallet that deployed or created the session.
+            </p>
+          </div>
+        </section>
+      ) : (
         <>
-          {successMessage && <div className="alert alert-success">{successMessage}</div>}
-          {errorMessage && <div className="alert alert-danger">{errorMessage}</div>}
-
-          {/* Form to create a new voting session */}
-          <div className="card mb-4">
-            <div className="card-body">
-              <h3 className="card-title">Create Voting Session</h3>
-              <div className="mb-3">
-                <input
-                  type="text"
-                  className="form-control"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Voting Title"
-                />
-              </div>
-              <div className="mb-3">
-                <label className="form-label">Start Time</label>
-                <input
-                  type="datetime-local"
-                  className="form-control"
-                  onChange={(e) => setStartTime(e.target.value)}
-                />
-              </div>
-              <div className="mb-3">
-                <label className="form-label">End Time</label>
-                <input
-                  type="datetime-local"
-                  className="form-control"
-                  onChange={(e) => setEndTime(e.target.value)}
-                />
-              </div>
-              <button className="btn btn-success" onClick={createSession}>
-                Create Voting Session
-              </button>
+          {isWrongNetwork && (
+            <div className="alert alert-warning">
+              Switch wallet network to Sepolia ({SEPOLIA_CHAIN_ID_HEX}) to use
+              admin actions.
             </div>
-          </div>
+          )}
 
-          {/* Form to add candidates */}
-          <div className="card mb-4">
-            <div className="card-body">
-              <h3 className="card-title">Add Candidate</h3>
-              <div className="mb-3">
-                <label className="form-label">Select Session</label>
-                <select
-                  className="form-select"
-                  onChange={(e) => setSelectedSessionId(e.target.value)}
-                  value={selectedSessionId || ''}
+          {(successMessage || errorMessage) && feedbackTarget === "global" && (
+            <section className="admin-feedback-region" aria-live="polite">
+              {successMessage && (
+                <div
+                  className="admin-feedback-toast admin-feedback-toast-success"
+                  role="status"
                 >
-                  <option value="" disabled>
-                    Select a session
-                  </option>
-                  {sessions.map((session) => (
-                    <option key={session.id} value={session.id}>
-                      {session.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="mb-3">
-                <input
-                  type="text"
-                  className="form-control"
-                  value={candidateName}
-                  onChange={(e) => setCandidateName(e.target.value)}
-                  placeholder="Candidate Name"
-                />
-              </div>
-              <button className="btn btn-warning" onClick={addCandidate}>
-                Add Candidate
-              </button>
-            </div>
-          </div>
+                  <span className="admin-feedback-label">Success</span>
+                  <strong className="admin-feedback-message">
+                    {successMessage}
+                  </strong>
+                </div>
+              )}
+              {errorMessage && (
+                <div
+                  className="admin-feedback-toast admin-feedback-toast-error"
+                  role="alert"
+                >
+                  <span className="admin-feedback-label">Action required</span>
+                  <strong className="admin-feedback-message">
+                    {errorMessage}
+                  </strong>
+                </div>
+              )}
+            </section>
+          )}
 
-          {/* List of sessions and their candidates */}
-          <div className="card">
-            <div className="card-body">
-              <h3 className="card-title">Sessions and Candidates</h3>
-              <div className="row">
-                {sessions.map((session) => (
-                  <div className="col-md-6 mb-4" key={session.id}>
-                    <div className="card">
-                      <div className="card-body">
-                        <h3 className="card-title">
-                          {session.title}{' '}
-                          <span
-                            className={`badge bg-${
-                              session.status === 'Not Started'
-                                ? 'secondary'
-                                : session.status === 'Active'
-                                ? 'info'
-                                : 'success'
-                            }`}
-                          >
-                            {session.status}
-                          </span>
-                        </h3>
-                        <p>
-                          <strong>Start:</strong>{' '}
-                          {new Date(session.startTime * 1000).toLocaleString()}
-                          <br />
-                          <strong>End:</strong>{' '}
-                          {new Date(session.endTime * 1000).toLocaleString()}
-                        </p>
-                        <ul className="list-group">
-                          {candidatesBySession[session.id]?.length > 0 ? (
-                            candidatesBySession[session.id].map((candidate) => (
-                              <li
-                                className="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
-                                key={candidate.id}
-                              >
-                                {candidate.name}
-                              </li>
-                            ))
-                          ) : (
-                            <li className="list-group-item list-group-item-primary">No candidates added!</li>
-                          )}
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+          <section className="admin-grid">
+            <article className="form-panel">
+              <div className="panel-header">
+                <p className="page-kicker">Step 1</p>
+                <h3>Create a voting session</h3>
               </div>
+              <p className="required-hint">
+                <span className="required-marker" aria-hidden="true">
+                  ★
+                </span>{" "}
+                All fields are required
+              </p>
+              <div className="form-stack">
+                <div>
+                  <label className="form-label">
+                    Session title
+                    <span className="required-marker" aria-hidden="true">
+                      *
+                    </span>
+                    <span className="visually-hidden">required</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Student council election"
+                  />
+                </div>
+                <div>
+                  <label className="form-label">
+                    Start time
+                    <span className="required-marker" aria-hidden="true">
+                      *
+                    </span>
+                    <span className="visually-hidden">required</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    className="form-control"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">
+                    End time
+                    <span className="required-marker" aria-hidden="true">
+                      *
+                    </span>
+                    <span className="visually-hidden">required</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    className="form-control"
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                  />
+                </div>
+              </div>
+              <button
+                className="btn btn-success app-cta"
+                onClick={createSession}
+                disabled={isWrongNetwork}
+              >
+                Create session
+              </button>
+              {(successMessage || errorMessage) &&
+                feedbackTarget === "create" && (
+                  <div className="admin-feedback-inline" aria-live="polite">
+                    {successMessage && (
+                      <div
+                        className="admin-feedback-toast admin-feedback-toast-success"
+                        role="status"
+                      >
+                        <span className="admin-feedback-label">Success</span>
+                        <strong className="admin-feedback-message">
+                          {successMessage}
+                        </strong>
+                      </div>
+                    )}
+                    {errorMessage && (
+                      <div
+                        className="admin-feedback-toast admin-feedback-toast-error"
+                        role="alert"
+                      >
+                        <span className="admin-feedback-label">
+                          Action required
+                        </span>
+                        <strong className="admin-feedback-message">
+                          {errorMessage}
+                        </strong>
+                      </div>
+                    )}
+                  </div>
+                )}
+            </article>
+
+            <article className="form-panel">
+              <div className="panel-header">
+                <p className="page-kicker">Step 2</p>
+                <h3>Add candidates</h3>
+              </div>
+              <p className="required-hint">
+                <span className="required-marker" aria-hidden="true">
+                  ★
+                </span>{" "}
+                All fields are required
+              </p>
+              <div className="form-stack">
+                <div>
+                  <label className="form-label">
+                    Target session
+                    <span className="required-marker" aria-hidden="true">
+                      *
+                    </span>
+                    <span className="visually-hidden">required</span>
+                  </label>
+                  <select
+                    className="form-select"
+                    onChange={(e) => setSelectedSessionId(e.target.value)}
+                    value={selectedSessionId}
+                  >
+                    <option value="" disabled>
+                      Select a session
+                    </option>
+                    {sessions.map((session) => (
+                      <option key={session.id} value={session.id}>
+                        {session.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="form-label">
+                    Candidate name
+                    <span className="required-marker" aria-hidden="true">
+                      *
+                    </span>
+                    <span className="visually-hidden">required</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={candidateName}
+                    onChange={(e) => setCandidateName(e.target.value)}
+                    placeholder="Candidate name"
+                  />
+                </div>
+              </div>
+              <button
+                className="btn btn-warning app-cta"
+                onClick={addCandidate}
+                disabled={isWrongNetwork}
+              >
+                Add candidate
+              </button>
+              {(successMessage || errorMessage) &&
+                feedbackTarget === "candidate" && (
+                  <div className="admin-feedback-inline" aria-live="polite">
+                    {successMessage && (
+                      <div
+                        className="admin-feedback-toast admin-feedback-toast-success"
+                        role="status"
+                      >
+                        <span className="admin-feedback-label">Success</span>
+                        <strong className="admin-feedback-message">
+                          {successMessage}
+                        </strong>
+                      </div>
+                    )}
+                    {errorMessage && (
+                      <div
+                        className="admin-feedback-toast admin-feedback-toast-error"
+                        role="alert"
+                      >
+                        <span className="admin-feedback-label">
+                          Action required
+                        </span>
+                        <strong className="admin-feedback-message">
+                          {errorMessage}
+                        </strong>
+                      </div>
+                    )}
+                  </div>
+                )}
+            </article>
+          </section>
+
+          <section className="insight-panel admin-tip-panel">
+            <div>
+              <p className="page-kicker">Workflow tip</p>
+              <h3>Populate candidates before the session opens.</h3>
             </div>
-          </div>
+            <p>
+              Candidate edits are blocked during the active voting window, so it
+              is safest to prepare the ballot while the session is still in the
+              upcoming state.
+            </p>
+          </section>
+
+          <section className="session-grid">
+            {sessions.map((session) => (
+              <article className="session-card" key={session.id}>
+                <div className="session-card-top">
+                  <div>
+                    <p className="session-eyebrow">Session #{session.id + 1}</p>
+                    <h3>{session.title}</h3>
+                  </div>
+                  <span className={getStatusTone(session.status)}>
+                    {session.status}
+                  </span>
+                </div>
+
+                <div className="session-meta-grid">
+                  <div>
+                    <span className="wallet-label">Start</span>
+                    <strong>{formatTimestamp(session.startTime)}</strong>
+                  </div>
+                  <div>
+                    <span className="wallet-label">End</span>
+                    <strong>{formatTimestamp(session.endTime)}</strong>
+                  </div>
+                  <div>
+                    <span className="wallet-label">Creator</span>
+                    <strong>{shortenAddress(session.creator)}</strong>
+                  </div>
+                </div>
+
+                <div className="candidate-stack">
+                  {candidatesBySession[session.id]?.length > 0 ? (
+                    candidatesBySession[session.id].map((candidate) => (
+                      <div className="candidate-row" key={candidate.id}>
+                        <div>
+                          <strong>{candidate.name}</strong>
+                        </div>
+                        <span className="candidate-state">Ready</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="inline-note inline-note-muted">
+                      No candidates have been added to this session yet.
+                    </div>
+                  )}
+                </div>
+              </article>
+            ))}
+          </section>
         </>
       )}
     </div>
