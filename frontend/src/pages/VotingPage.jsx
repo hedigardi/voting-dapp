@@ -2,8 +2,22 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useWallet } from "../hooks/useWallet";
 import { getContract, SEPOLIA_CHAIN_ID_HEX } from "../utils/web3";
 
-const formatTimestamp = (timestamp) =>
-  new Date(timestamp * 1000).toLocaleString();
+const formatTimestamp = (timestamp) => {
+  const date = new Date(timestamp * 1000);
+  const formatter = new Intl.DateTimeFormat(navigator.language || "en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  const timeFormatter = new Intl.DateTimeFormat(navigator.language || "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  const dateStr = formatter.format(date);
+  const timeStr = timeFormatter.format(date);
+  return `${dateStr}\n${timeStr}`;
+};
 
 const getVotedCandidatesBySession = async (contract, account) => {
   try {
@@ -57,6 +71,7 @@ const VotingPage = () => {
   const [sessions, setSessions] = useState([]); // Stores fetched voting sessions
   const [error, setError] = useState(""); // For displaying error messages
   const [loading, setLoading] = useState(false); // Tracks loading state for displaying the spinner
+  const [sessionErrors, setSessionErrors] = useState({}); // Store errors per session
   const {
     walletConnected,
     account,
@@ -161,7 +176,7 @@ const VotingPage = () => {
       await fetchSessions(); // Refresh sessions after voting
     } catch (err) {
       console.error("Failed to vote:", err);
-      handleError("Failed to vote: " + err.message);
+      handleSessionError(sessionId, "Failed to vote: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -176,6 +191,19 @@ const VotingPage = () => {
     setTimeout(() => {
       setError("");
     }, 3000);
+  };
+
+  const handleSessionError = (sessionId, message) => {
+    setSessionErrors((prev) => ({
+      ...prev,
+      [sessionId]: message,
+    }));
+    setTimeout(() => {
+      setSessionErrors((prev) => ({
+        ...prev,
+        [sessionId]: "",
+      }));
+    }, 4000);
   };
 
   /**
@@ -404,7 +432,7 @@ const VotingPage = () => {
                           ) : null // Removed "Not selected" for other candidates
                         ) : session.status === "Active" ? (
                           <button
-                            className="btn btn-success session-action"
+                            className="btn btn-primary session-action"
                             onClick={() =>
                               voteForCandidate(session.id, candidate.id)
                             }
@@ -422,6 +450,22 @@ const VotingPage = () => {
                       </div>
                     ))}
                   </div>
+
+                  {sessionErrors[session.id] && (
+                    <div className="admin-feedback-inline" aria-live="polite">
+                      <div
+                        className="admin-feedback-toast admin-feedback-toast-error"
+                        role="alert"
+                      >
+                        <span className="admin-feedback-label">
+                          Action required
+                        </span>
+                        <strong className="admin-feedback-message">
+                          {sessionErrors[session.id]}
+                        </strong>
+                      </div>
+                    </div>
+                  )}
                 </article>
               ))}
             </section>

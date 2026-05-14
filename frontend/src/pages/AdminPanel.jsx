@@ -6,8 +6,36 @@ import {
   shortenAddress,
 } from "../utils/web3";
 
-const formatTimestamp = (timestamp) =>
-  new Date(timestamp * 1000).toLocaleString();
+const formatTimestamp = (timestamp) => {
+  const date = new Date(timestamp * 1000);
+  const formatter = new Intl.DateTimeFormat(navigator.language || "en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  const timeFormatter = new Intl.DateTimeFormat(navigator.language || "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  const dateStr = formatter.format(date);
+  const timeStr = timeFormatter.format(date);
+  return `${dateStr}\n${timeStr}`;
+};
+
+const toSafeNumber = (value) => {
+  try {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  } catch {
+    return 0;
+  }
+};
+
+const formatVoteCount = (count) => {
+  const voteCount = toSafeNumber(count);
+  return `${voteCount} ${voteCount === 1 ? "vote" : "votes"}`;
+};
 
 const deriveSessionStatus = ({ session, currentTime, candidateCount }) => {
   if (!session.isActive) return "Inactive";
@@ -36,6 +64,8 @@ const AdminPanel = () => {
   const [successMessage, setSuccessMessage] = useState("");
   const [feedbackTarget, setFeedbackTarget] = useState("global");
   const [loading, setLoading] = useState(false);
+  const [latestSharedSessionId, setLatestSharedSessionId] = useState(null);
+  const [copiedSessionId, setCopiedSessionId] = useState(null);
   const {
     walletConnected,
     account,
@@ -56,6 +86,39 @@ const AdminPanel = () => {
     setSuccessMessage(message);
     setFeedbackTarget(target);
     setTimeout(() => setSuccessMessage(""), 3000);
+  };
+
+  const getSessionShareUrl = (sessionId) => {
+    if (typeof window === "undefined") {
+      return `/s/${sessionId}`;
+    }
+
+    return `${window.location.origin}/s/${sessionId}`;
+  };
+
+  const copySessionLink = async (sessionId) => {
+    const shareUrl = getSessionShareUrl(sessionId);
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = shareUrl;
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      }
+
+      setCopiedSessionId(sessionId);
+      setTimeout(() => setCopiedSessionId(null), 2000);
+    } catch (err) {
+      handleError("Failed to copy link: " + err.message, "global");
+    }
   };
 
   const fetchCandidates = useCallback(async (sessionId) => {
@@ -93,6 +156,22 @@ const AdminPanel = () => {
           candidateCount: candidates.length,
         });
 
+        let winner = "";
+        let isTie = false;
+
+        if (status === "Completed" && candidates.length > 0) {
+          try {
+            const result = await contract.methods.getWinner(i).call();
+            winner = result[0];
+            isTie = result[1];
+          } catch (error) {
+            console.error(
+              `Error fetching winner for session ${i}:`,
+              error.message,
+            );
+          }
+        }
+
         fetchedSessions.push({
           id: Number(session.id),
           title: session.title,
@@ -100,10 +179,11 @@ const AdminPanel = () => {
           endTime: Number(session.endTime),
           status,
           creator,
+          winner: candidates.length > 0 ? winner : "No candidates",
+          isTie: candidates.length > 0 && isTie,
         });
       }
 
-      // Sort sessions by recency: newest first, oldest last.
       fetchedSessions.sort(
         (a, b) =>
           b.endTime - a.endTime || b.startTime - a.startTime || b.id - a.id,
@@ -124,7 +204,7 @@ const AdminPanel = () => {
   const createSession = async () => {
     try {
       if (!title || !startTime || !endTime) {
-        throw new Error("All fields are required to create a session.");
+        throw new Error("Please fill in all required fields.");
       }
 
       setLoading(true);
@@ -137,6 +217,9 @@ const AdminPanel = () => {
       }
 
       const contract = getContract();
+      const nextSessionId = Number(
+        await contract.methods.sessionCount().call(),
+      );
       await contract.methods
         .createVotingSession(title, startTimeUnix, endTimeUnix)
         .send({ from: account });
@@ -146,6 +229,7 @@ const AdminPanel = () => {
       setEndTime("");
 
       await fetchSessions();
+      setLatestSharedSessionId(nextSessionId);
       handleSuccess("Voting session created successfully!", "create");
     } catch (err) {
       console.error("Error creating session:", err);
@@ -360,12 +444,6 @@ const AdminPanel = () => {
                 <p className="page-kicker">Step 1</p>
                 <h3>Create a voting session</h3>
               </div>
-              <p className="required-hint">
-                <span className="required-marker" aria-hidden="true">
-                  ★
-                </span>{" "}
-                All fields are required
-              </p>
               <div className="form-stack">
                 <div>
                   <label className="form-label">
@@ -415,7 +493,7 @@ const AdminPanel = () => {
                 </div>
               </div>
               <button
-                className="btn btn-success app-cta"
+                className="btn btn-primary app-cta"
                 onClick={createSession}
                 disabled={isWrongNetwork}
               >
@@ -450,6 +528,39 @@ const AdminPanel = () => {
                     )}
                   </div>
                 )}
+
+              {latestSharedSessionId !== null && (
+                <div className="session-share-card" aria-live="polite">
+                  <span className="summary-label">Share this session</span>
+                  <strong className="session-share-link">
+                    {getSessionShareUrl(latestSharedSessionId)}
+                  </strong>
+                  <div className="session-share-actions">
+                    <button
+                      className="btn btn-primary btn-sm"
+                      type="button"
+                      onClick={() => copySessionLink(latestSharedSessionId)}
+                    >
+                      {copiedSessionId === latestSharedSessionId
+                        ? "Copied"
+                        : "Copy link"}
+                    </button>
+                    <a
+                      className="btn btn-primary btn-sm"
+                      href={getSessionShareUrl(latestSharedSessionId)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open voter view
+                    </a>
+                    {copiedSessionId === latestSharedSessionId && (
+                      <p className="session-copy-feedback" role="status">
+                        Session link copied
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
             </article>
 
             <article className="form-panel">
@@ -457,12 +568,6 @@ const AdminPanel = () => {
                 <p className="page-kicker">Step 2</p>
                 <h3>Add candidates</h3>
               </div>
-              <p className="required-hint">
-                <span className="required-marker" aria-hidden="true">
-                  ★
-                </span>{" "}
-                All fields are required
-              </p>
               <div className="form-stack">
                 <div>
                   <label className="form-label">
@@ -505,7 +610,7 @@ const AdminPanel = () => {
                 </div>
               </div>
               <button
-                className="btn btn-warning app-cta"
+                className="btn btn-primary app-cta"
                 onClick={addCandidate}
                 disabled={isWrongNetwork}
               >
@@ -583,22 +688,110 @@ const AdminPanel = () => {
                   </div>
                 </div>
 
+                <div className="session-share-actions">
+                  <button
+                    className="btn btn-primary btn-sm"
+                    type="button"
+                    onClick={() => copySessionLink(session.id)}
+                  >
+                    {copiedSessionId === session.id ? "Copied" : "Copy link"}
+                  </button>
+                  <a
+                    className="btn btn-primary btn-sm"
+                    href={getSessionShareUrl(session.id)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open voter view
+                  </a>
+                  {copiedSessionId === session.id && (
+                    <p className="session-copy-feedback" role="status">
+                      Session link copied
+                    </p>
+                  )}
+                </div>
+
                 <div className="candidate-stack">
                   {candidatesBySession[session.id]?.length > 0 ? (
-                    candidatesBySession[session.id].map((candidate) => (
-                      <div className="candidate-row" key={candidate.id}>
-                        <div>
-                          <strong>{candidate.name}</strong>
+                    candidatesBySession[session.id].map((candidate) => {
+                      const candidateVotes = toSafeNumber(candidate.votes);
+                      const topVotes = candidatesBySession[session.id].reduce(
+                        (maxVotes, entry) => {
+                          const currentVotes = toSafeNumber(entry.votes);
+                          return currentVotes > maxVotes
+                            ? currentVotes
+                            : maxVotes;
+                        },
+                        1,
+                      );
+
+                      const percent =
+                        topVotes > 0
+                          ? Number((candidateVotes * 10000) / topVotes) / 100
+                          : 0;
+                      const widthValue =
+                        candidateVotes > 0 ? Math.max(percent, 12) : 0;
+                      const width = `${Math.min(widthValue, 100)}%`;
+
+                      return (
+                        <div className="results-row" key={candidate.id}>
+                          <div className="results-row-head">
+                            <strong>{candidate.name}</strong>
+                            <span className="candidate-meta">
+                              {formatVoteCount(candidate.votes)}
+                            </span>
+                          </div>
+                          <div className="results-bar-track">
+                            <span
+                              className="results-bar-fill"
+                              style={{ width }}
+                            />
+                          </div>
                         </div>
-                        <span className="candidate-state">Ready</span>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <div className="inline-note inline-note-muted">
                       No candidates have been added to this session yet.
                     </div>
                   )}
                 </div>
+
+                {session.status === "Completed" &&
+                  (() => {
+                    const isNoCandidates = session.winner === "No candidates";
+                    const isTie = !isNoCandidates && session.isTie;
+
+                    const toneClass = isNoCandidates
+                      ? "results-outcome-banner-empty"
+                      : isTie
+                        ? "results-outcome-banner-tie"
+                        : "results-outcome-banner-winner";
+
+                    const label = isNoCandidates
+                      ? "No candidates"
+                      : isTie
+                        ? "Tie detected"
+                        : "Winner";
+
+                    const value = isNoCandidates
+                      ? "No candidates available"
+                      : isTie
+                        ? "No clear winner"
+                        : session.winner || "Winner unavailable";
+
+                    return (
+                      <div
+                        className={`results-outcome-banner ${toneClass}`}
+                        role="status"
+                      >
+                        <span className="results-outcome-label">{label}</span>
+                        <strong className="results-outcome-value">
+                          {value}
+                        </strong>
+                      </div>
+                    );
+                  })()}
               </article>
             ))}
           </section>

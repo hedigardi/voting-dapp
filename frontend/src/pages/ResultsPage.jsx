@@ -2,8 +2,24 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useWallet } from "../hooks/useWallet";
 import { getContract, SEPOLIA_CHAIN_ID_HEX } from "../utils/web3";
 
-const formatTimestamp = (timestamp) =>
-  new Date(timestamp * 1000).toLocaleString();
+const formatTimestamp = (timestamp) => {
+  const date = new Date(timestamp * 1000);
+  const formatter = new Intl.DateTimeFormat(navigator.language || "en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  const timeFormatter = new Intl.DateTimeFormat(navigator.language || "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  const dateStr = formatter.format(date);
+  const timeStr = timeFormatter.format(date);
+  return `${dateStr}\n${timeStr}`;
+};
+
+const formatVoteCount = (count) => `${count} ${count === 1 ? "vote" : "votes"}`;
 
 const deriveSessionStatus = ({ session, currentTime, candidateCount }) => {
   if (!session.isActive) return "Inactive";
@@ -279,8 +295,7 @@ const ResultsPage = () => {
                           <div className="results-row-head">
                             <strong>{candidate.name}</strong>
                             <span className="candidate-meta">
-                              {candidate.votes}{" "}
-                              {candidate.votes === 1 ? "vote" : "votes"}
+                              {formatVoteCount(candidate.votes)}
                             </span>
                           </div>
                           <div className="results-bar-track">
