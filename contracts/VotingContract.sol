@@ -51,6 +51,10 @@ contract VotingContract is Ownable, ReentrancyGuard {
             block.timestamp <= votingSessions[sessionId].endTime,
             "Voting is not active for this session"
         );
+        require(
+            votingSessions[sessionId].candidates.length > 0,
+            "Session cannot start without candidates"
+        );
         _;
     }
 
