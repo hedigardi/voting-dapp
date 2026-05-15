@@ -6,8 +6,18 @@ import "@openzeppelin/contracts/access/Ownable.sol"; // For ownership and access
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol"; // For reentrancy protection
 
 /**
+ * @title IGitcoinPassportDecoder
+ * @dev Minimal interface for the Gitcoin Passport Decoder contract.
+ *      Deployed on Optimism Sepolia: 0xe53C60F8069C2f0c3a84F9B3DB5cf56f3100ba56
+ */
+interface IGitcoinPassportDecoder {
+    function isHuman(address userAddress) external view returns (bool);
+}
+
+/**
  * @title VotingContract
  * @dev A decentralized voting system allowing users to create, manage, and participate in voting sessions.
+ *      Supports optional Gitcoin Passport verification to prevent Sybil attacks.
  */
 contract VotingContract is Ownable, ReentrancyGuard {
     // Struct to represent a candidate in the voting session
@@ -26,11 +36,13 @@ contract VotingContract is Ownable, ReentrancyGuard {
         mapping(address => bool) hasVoted; // Tracks if an address has voted
         bool isActive; // Session status (active/inactive)
         address creator; // Address of the session creator
+        bool requiresPassport; // If true, voter must hold a valid Gitcoin Passport
     }
 
     // Public variables
     uint public sessionCount; // Counter for total sessions
     mapping(uint => VotingSession) public votingSessions; // Mapping session IDs to VotingSession
+    IGitcoinPassportDecoder public passportDecoder; // Gitcoin Passport Decoder contract
 
     // Events to track contract actions
     event VotingSessionCreated(
@@ -38,11 +50,13 @@ contract VotingContract is Ownable, ReentrancyGuard {
         uint sessionId,
         string title,
         uint startTime,
-        uint endTime
+        uint endTime,
+        bool requiresPassport
     );
     event CandidateAdded(uint indexed sessionId, string candidateName);
     event VoteCast(address indexed voter, uint indexed sessionId, uint candidateId);
     event SessionArchived(uint indexed sessionId);
+    event PassportDecoderUpdated(address indexed newDecoder);
 
     // Modifier to ensure a function is called only during the voting period
     modifier onlyDuringVotingPeriod(uint sessionId) {
@@ -74,20 +88,35 @@ contract VotingContract is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Constructor to initialize the contract with the owner address.
+     * @dev Constructor to initialize the contract with the owner address and Gitcoin Passport Decoder.
+     * @param _passportDecoder Address of the deployed GitcoinPassportDecoder contract.
      */
-    constructor() Ownable(msg.sender) {}
+    constructor(address _passportDecoder) Ownable(msg.sender) {
+        passportDecoder = IGitcoinPassportDecoder(_passportDecoder);
+    }
+
+    /**
+     * @notice Update the Gitcoin Passport Decoder contract address.
+     * @param _decoder New decoder contract address.
+     */
+    function setPassportDecoder(address _decoder) external onlyOwner {
+        require(_decoder != address(0), "Invalid decoder address");
+        passportDecoder = IGitcoinPassportDecoder(_decoder);
+        emit PassportDecoderUpdated(_decoder);
+    }
 
     /**
      * @notice Create a new voting session.
      * @param title The title of the voting session.
      * @param startTime The start time of the voting session (timestamp).
      * @param endTime The end time of the voting session (timestamp).
+     * @param requiresPassport Whether voters must hold a valid Gitcoin Passport (score >= 20).
      */
     function createVotingSession(
         string memory title,
         uint startTime,
-        uint endTime
+        uint endTime,
+        bool requiresPassport
     ) public onlyOwner {
         require(endTime > startTime, "End time must be after start time");
 
@@ -98,8 +127,9 @@ contract VotingContract is Ownable, ReentrancyGuard {
         session.endTime = endTime;
         session.isActive = true;
         session.creator = msg.sender;
+        session.requiresPassport = requiresPassport;
 
-        emit VotingSessionCreated(msg.sender, sessionCount, title, startTime, endTime);
+        emit VotingSessionCreated(msg.sender, sessionCount, title, startTime, endTime, requiresPassport);
         sessionCount++;
     }
 
@@ -137,6 +167,13 @@ contract VotingContract is Ownable, ReentrancyGuard {
         VotingSession storage session = votingSessions[sessionId];
         require(!session.hasVoted[msg.sender], "You have already voted");
         require(candidateId < session.candidates.length, "Invalid candidate ID");
+
+        if (session.requiresPassport) {
+            require(
+                passportDecoder.isHuman(msg.sender),
+                "Gitcoin Passport required: your score is below the threshold. Visit passport.xyz to verify."
+            );
+        }
 
         session.hasVoted[msg.sender] = true;
         session.candidates[candidateId].voteCount++;

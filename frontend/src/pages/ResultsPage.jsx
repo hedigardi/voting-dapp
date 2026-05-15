@@ -1,9 +1,42 @@
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "../hooks/useWallet";
-import { getContract, SEPOLIA_CHAIN_ID_HEX } from "../utils/web3";
+import {
+  getReadOnlyContract,
+  CHAIN_NAME,
+  sortSessionsByRecency,
+  switchToSupportedNetwork,
+} from "../utils/web3";
 
-const formatTimestamp = (timestamp) =>
-  new Date(timestamp * 1000).toLocaleString();
+const formatTimestamp = (timestamp) => {
+  const date = new Date(timestamp * 1000);
+  const formatter = new Intl.DateTimeFormat(navigator.language || "en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  const timeFormatter = new Intl.DateTimeFormat(navigator.language || "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  const dateStr = formatter.format(date);
+  const timeStr = timeFormatter.format(date);
+  return `${dateStr}\n${timeStr}`;
+};
+
+const formatSyncTime = (timestampMs) => {
+  if (!timestampMs) {
+    return "--:--";
+  }
+
+  return new Intl.DateTimeFormat(navigator.language || "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(timestampMs));
+};
+
+const formatVoteCount = (count) => `${count} ${count === 1 ? "vote" : "votes"}`;
 
 const deriveSessionStatus = ({ session, currentTime, candidateCount }) => {
   if (!session.isActive) return "Inactive";
@@ -44,10 +77,19 @@ const ResultsPage = () => {
   const {
     walletConnected,
     account,
+    hasResolvedChainId,
     walletError,
     isWrongNetwork,
     connectWallet,
   } = useWallet();
+
+  const handleNetworkSwitch = async () => {
+    try {
+      await switchToSupportedNetwork();
+    } catch (err) {
+      setError(err.message || `Failed to switch to ${CHAIN_NAME}.`);
+    }
+  };
 
   /**
    * Fetches voting results for all sessions from the smart contract.
@@ -55,11 +97,12 @@ const ResultsPage = () => {
   const fetchResults = useCallback(async () => {
     try {
       setLoading(true);
-      const contract = getContract();
+      const contract = getReadOnlyContract();
 
       const sessionCount = await contract.methods.sessionCount().call();
 
       const currentTime = Math.floor(Date.now() / 1000);
+      const syncedAt = Date.now();
       const fetchedSessions = [];
 
       for (let i = 0; i < sessionCount; i++) {
@@ -95,6 +138,7 @@ const ResultsPage = () => {
           startTime: Number(session.startTime),
           endTime: Number(session.endTime),
           status,
+          syncedAt,
           winner: candidates.length > 0 ? winner : "No candidates",
           isTie: candidates.length > 0 && isTie,
           candidates: candidates.map((candidate, index) => ({
@@ -105,29 +149,47 @@ const ResultsPage = () => {
         });
       }
 
-      // Sort sessions by recency: newest first, oldest last.
-      fetchedSessions.sort(
-        (a, b) =>
-          b.endTime - a.endTime || b.startTime - a.startTime || b.id - a.id,
-      );
-
-      setSessions(fetchedSessions); // Update state with fetched sessions
+      setSessions(sortSessionsByRecency(fetchedSessions)); // Update state with fetched sessions
     } catch (err) {
       console.error("Error fetching results:", err);
-      setError("Failed to fetch results: " + err.message);
+      setError("Could not load results. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (!walletConnected || !account || isWrongNetwork) {
+    if (!walletConnected || !account || !hasResolvedChainId || isWrongNetwork) {
       setSessions([]);
       return;
     }
 
     fetchResults();
-  }, [walletConnected, account, isWrongNetwork, fetchResults]);
+  }, [
+    walletConnected,
+    account,
+    hasResolvedChainId,
+    isWrongNetwork,
+    fetchResults,
+  ]);
+
+  useEffect(() => {
+    if (!walletConnected || !account || !hasResolvedChainId || isWrongNetwork) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      fetchResults();
+    }, 12000);
+
+    return () => window.clearInterval(intervalId);
+  }, [
+    walletConnected,
+    account,
+    hasResolvedChainId,
+    isWrongNetwork,
+    fetchResults,
+  ]);
 
   useEffect(() => {
     if (walletError) {
@@ -227,8 +289,17 @@ const ResultsPage = () => {
 
           {isWrongNetwork && (
             <div className="alert alert-warning">
-              Switch wallet network to Sepolia ({SEPOLIA_CHAIN_ID_HEX}) to view
-              accurate results.
+              Your wallet is connected to the wrong network. Please switch to{" "}
+              {CHAIN_NAME} to view results.
+              <div className="mt-2">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={handleNetworkSwitch}
+                >
+                  Switch to {CHAIN_NAME}
+                </button>
+              </div>
             </div>
           )}
 
@@ -245,6 +316,13 @@ const ResultsPage = () => {
                     </div>
                     <span className={getStatusTone(session.status)}>
                       {session.status}
+                    </span>
+                  </div>
+
+                  <div className="session-sync-meta">
+                    <span className="session-sync-badge">
+                      <span className="session-sync-dot" aria-hidden="true" />
+                      Last updated: {formatSyncTime(session.syncedAt)}
                     </span>
                   </div>
 
@@ -279,8 +357,7 @@ const ResultsPage = () => {
                           <div className="results-row-head">
                             <strong>{candidate.name}</strong>
                             <span className="candidate-meta">
-                              {candidate.votes}{" "}
-                              {candidate.votes === 1 ? "vote" : "votes"}
+                              {formatVoteCount(candidate.votes)}
                             </span>
                           </div>
                           <div className="results-bar-track">

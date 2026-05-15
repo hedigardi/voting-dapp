@@ -4,11 +4,13 @@
   "description": "A decentralized voting application powered by blockchain technology.",
   "main": "index.js",
   "scripts": {
-    "clean": "rm -rf cache artifacts",
-    "compile": "hardhat compile",
+    "start:prod": "npm run start:prod --prefix frontend",
+    "clean": "hardhat clean",
+    "sync:abi": "node scripts/sync-frontend-abi.js",
+    "compile": "hardhat compile && npm run sync:abi",
     "test": "hardhat test",
     "coverage": "hardhat coverage",
-    "lint": "eslint . --ext .js,.ts"
+    "lint": "npm run lint --prefix frontend"
   },
   "author": "Hedi Gardi",
   "license": "MIT",

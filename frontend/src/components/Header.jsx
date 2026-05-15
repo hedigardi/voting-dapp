@@ -1,8 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { useWallet } from "../hooks/useWallet";
 import { shortenAddress } from "../utils/web3";
-import "bootstrap/dist/css/bootstrap.min.css"; // Import Bootstrap for styling
 
 const WalletIcon = ({ size = 12 }) => (
   <svg
@@ -31,6 +30,9 @@ const Header = () => {
     disconnectWallet,
   } = useWallet();
 
+  const location = useLocation();
+  const isPublicSessionRoute = location.pathname.startsWith("/s/");
+
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -45,13 +47,20 @@ const Header = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [dropdownOpen]);
 
+  useEffect(() => {
+    setDropdownOpen(false);
+  }, [location.pathname]);
+
   const getNavClass = ({ isActive }) =>
     `nav-link app-nav-link${isActive ? " app-nav-link-active" : ""}`;
 
   return (
     <nav className="navbar navbar-expand-lg app-navbar">
       <div className="container-fluid">
-        <Link className="navbar-brand app-brand" to="/">
+        <Link
+          className="navbar-brand app-brand"
+          to={isPublicSessionRoute ? location.pathname : "/"}
+        >
           <span className="app-brand-mark">VD</span>
           <span>
             <strong>Voting DApp</strong>
@@ -59,7 +68,6 @@ const Header = () => {
           </span>
         </Link>
 
-        {/* Toggler button for collapsing the navbar on smaller screens */}
         <button
           className="navbar-toggler"
           type="button"
@@ -72,26 +80,30 @@ const Header = () => {
           <span className="navbar-toggler-icon"></span>
         </button>
 
-        {/* Navbar links, collapsed on smaller screens */}
         <div className="collapse navbar-collapse" id="navbarNav">
           <ul className="navbar-nav ms-auto app-nav-list align-items-lg-center">
-            <li className="nav-item">
-              <NavLink className={getNavClass} to="/" end>
-                Voting
-              </NavLink>
-            </li>
+            {!isPublicSessionRoute && (
+              <>
+                <li className="nav-item">
+                  <NavLink className={getNavClass} to="/" end>
+                    Voting
+                  </NavLink>
+                </li>
 
-            <li className="nav-item">
-              <NavLink className={getNavClass} to="/results">
-                Results
-              </NavLink>
-            </li>
+                <li className="nav-item">
+                  <NavLink className={getNavClass} to="/results">
+                    Results
+                  </NavLink>
+                </li>
 
-            <li className="nav-item">
-              <NavLink className={getNavClass} to="/admin">
-                Admin Panel
-              </NavLink>
-            </li>
+                <li className="nav-item">
+                  <NavLink className={getNavClass} to="/admin">
+                    Admin Panel
+                  </NavLink>
+                </li>
+              </>
+            )}
+
             <li className="nav-item app-wallet-slot" ref={dropdownRef}>
               {walletConnected ? (
                 <div className="app-wallet-dropdown-wrap">
@@ -165,7 +177,7 @@ const Header = () => {
                 </div>
               ) : (
                 <button
-                  className="btn btn-light btn-sm app-wallet-connect"
+                  className="btn btn-primary btn-sm app-wallet-connect"
                   onClick={connectWallet}
                 >
                   <WalletIcon size={12} />

@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getEthereum, getWeb3, SEPOLIA_CHAIN_ID_HEX } from "../utils/web3";
+import {
+  getEthereum,
+  getWeb3,
+  normalizeChainId,
+  SEPOLIA_CHAIN_ID_HEX,
+} from "../utils/web3";
 
 const WALLET_DISCONNECTED_EVENT = "wallet:disconnected";
 
@@ -29,7 +34,7 @@ export const useWallet = () => {
 
       setAccount(accounts?.[0] || "");
       setWalletConnected(accounts.length > 0);
-      setChainId(nextChainId || "");
+      setChainId(normalizeChainId(nextChainId));
       setWalletError("");
     } catch (err) {
       setWalletError(err.message || "Failed to connect wallet.");
@@ -59,7 +64,6 @@ export const useWallet = () => {
   useEffect(() => {
     let isMounted = true;
 
-    console.log("Hydrating wallet...");
     const hydrateWallet = async () => {
       try {
         const web3 = getWeb3();
@@ -67,16 +71,13 @@ export const useWallet = () => {
         const hasAccount = accounts.length > 0;
         const nextChainId = hasAccount ? await readChainId() : "";
 
-        console.log("Accounts:", accounts);
-        console.log("Chain ID:", nextChainId);
-
         if (!isMounted) {
           return;
         }
 
         setAccount(accounts?.[0] || "");
         setWalletConnected(hasAccount);
-        setChainId(nextChainId || "");
+        setChainId(normalizeChainId(nextChainId));
       } catch (err) {
         console.error("Failed to hydrate wallet:", err);
         if (!isMounted) {
@@ -106,7 +107,7 @@ export const useWallet = () => {
     };
 
     const handleChainChanged = (nextChainId) => {
-      setChainId(nextChainId || "");
+      setChainId(normalizeChainId(nextChainId));
       setWalletError("");
     };
 
@@ -135,7 +136,12 @@ export const useWallet = () => {
     () =>
       walletConnected &&
       chainId &&
-      chainId.toLowerCase() !== SEPOLIA_CHAIN_ID_HEX,
+      chainId !== normalizeChainId(SEPOLIA_CHAIN_ID_HEX),
+    [walletConnected, chainId],
+  );
+
+  const hasResolvedChainId = useMemo(
+    () => !walletConnected || Boolean(chainId),
     [walletConnected, chainId],
   );
 
@@ -143,6 +149,7 @@ export const useWallet = () => {
     walletConnected,
     account,
     chainId,
+    hasResolvedChainId,
     walletError,
     isWrongNetwork,
     connectWallet,
