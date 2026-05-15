@@ -10,7 +10,6 @@ import {
   getRecommendedSendOptions,
   isReplacementUnderpricedError,
   resolveVotedCandidateFromEvents,
-  SEPOLIA_CHAIN_ID_HEX,
   setPendingVotedCandidate,
   sortSessionsByRecency,
   CHAIN_NAME,
@@ -38,7 +37,7 @@ const formatTimestamp = (timestamp) => {
 
 const formatSyncTime = (timestampMs) => {
   if (!timestampMs) {
-    return "--:--:--";
+    return "--:--";
   }
 
   return new Intl.DateTimeFormat(navigator.language || "en-US", {
@@ -122,7 +121,6 @@ const VotingPage = () => {
   const {
     walletConnected,
     account,
-    chainId,
     hasResolvedChainId,
     walletError,
     isWrongNetwork,
@@ -247,15 +245,10 @@ const VotingPage = () => {
    * @param {number} candidateId - ID of the candidate
    */
   const voteForCandidate = async (sessionId, candidateId) => {
-    console.log(
-      `Attempting to vote: sessionId=${sessionId}, candidateId=${candidateId}`,
-    );
-    console.log(`Using account: ${account}`);
     try {
       setLoadingContext("voting");
       setLoading(true);
       const contract = getContract();
-      console.log("Contract instance retrieved.");
 
       // Pre-check Gitcoin Passport if the session requires it
       const session = sessions.find((s) => s.id === sessionId);
@@ -293,17 +286,7 @@ const VotingPage = () => {
 
       try {
         const sendOptions = await getRecommendedSendOptions(account);
-        await method
-          .send(sendOptions)
-          .on("transactionHash", (hash) => {
-            console.log(`Transaction hash: ${hash}`);
-          })
-          .on("receipt", (receipt) => {
-            console.log("Transaction receipt:", receipt);
-          })
-          .on("error", (error) => {
-            console.error("Transaction error:", error);
-          });
+        await method.send(sendOptions);
       } catch (sendErr) {
         if (!isReplacementUnderpricedError(sendErr)) {
           throw sendErr;
@@ -316,11 +299,9 @@ const VotingPage = () => {
       clearPendingVotedCandidate(sessionId, account);
       cacheVotedCandidate(sessionId, account, candidateId);
       setPostTxSyncUntil(Date.now() + 30000);
-      console.log("Vote transaction sent successfully.");
       await fetchSessions(); // Refresh sessions after voting
     } catch (err) {
       clearPendingVotedCandidate(sessionId, account);
-      console.error("Failed to vote:", err);
       handleSessionError(
         sessionId,
         "Your vote could not be submitted: " +
@@ -381,33 +362,6 @@ const VotingPage = () => {
       handleError(walletError);
     }
   }, [walletError]);
-
-  useEffect(() => {
-    if (isWrongNetwork) {
-      console.warn("User is on the wrong network. Expected Sepolia.");
-    }
-
-    if (!walletConnected) {
-      console.warn("Wallet is not connected.");
-    }
-
-    if (!account) {
-      console.warn("No account detected. Please connect your wallet.");
-    }
-  }, [isWrongNetwork, walletConnected, account]);
-
-  useEffect(() => {
-    sessions.forEach((session) => {
-      console.log(
-        `Session ${session.id}: hasVoted=${session.hasVoted}, status=${session.status}`,
-      );
-      session.candidates.forEach((candidate) => {
-        console.log(
-          `Candidate ${candidate.id} (${candidate.name}): votes=${candidate.votes}`,
-        );
-      });
-    });
-  }, [sessions]);
 
   useEffect(() => {
     const hasPendingVotes = sessions.some((session) => session.isVotePending);

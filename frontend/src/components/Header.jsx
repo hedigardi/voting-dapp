@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useWallet } from "../hooks/useWallet";
 import { shortenAddress } from "../utils/web3";
-import "bootstrap/dist/css/bootstrap.min.css";
 
 const WalletIcon = ({ size = 12 }) => (
   <svg

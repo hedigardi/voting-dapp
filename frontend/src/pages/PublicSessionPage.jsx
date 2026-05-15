@@ -11,7 +11,6 @@ import {
   getRecommendedSendOptions,
   isReplacementUnderpricedError,
   resolveVotedCandidateFromEvents,
-  SEPOLIA_CHAIN_ID_HEX,
   setPendingVotedCandidate,
   CHAIN_NAME,
   checkPassportIsHuman,
@@ -76,7 +75,6 @@ const PublicSessionPage = () => {
   const {
     walletConnected,
     account,
-    chainId,
     hasResolvedChainId,
     walletError,
     isWrongNetwork,

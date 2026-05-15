@@ -6,7 +6,6 @@ import {
   getRecommendedSendOptions,
   isReplacementUnderpricedError,
   parseWeb3ErrorMessage,
-  SEPOLIA_CHAIN_ID_HEX,
   CHAIN_NAME,
   sortSessionsByRecency,
   switchToSupportedNetwork,
@@ -90,7 +89,6 @@ const AdminPanel = () => {
   const {
     walletConnected,
     account,
-    chainId,
     hasResolvedChainId,
     walletError,
     isWrongNetwork,

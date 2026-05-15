@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useWallet } from "../hooks/useWallet";
 import {
   getContract,
-  SEPOLIA_CHAIN_ID_HEX,
   CHAIN_NAME,
   sortSessionsByRecency,
   switchToSupportedNetwork,
@@ -78,7 +77,6 @@ const ResultsPage = () => {
   const {
     walletConnected,
     account,
-    chainId,
     hasResolvedChainId,
     walletError,
     isWrongNetwork,

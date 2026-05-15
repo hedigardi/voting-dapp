@@ -64,16 +64,12 @@ export const useWallet = () => {
   useEffect(() => {
     let isMounted = true;
 
-    console.log("Hydrating wallet...");
     const hydrateWallet = async () => {
       try {
         const web3 = getWeb3();
         const accounts = await web3.eth.getAccounts();
         const hasAccount = accounts.length > 0;
         const nextChainId = hasAccount ? await readChainId() : "";
-
-        console.log("Accounts:", accounts);
-        console.log("Chain ID:", nextChainId);
 
         if (!isMounted) {
           return;
