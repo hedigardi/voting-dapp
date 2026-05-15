@@ -562,6 +562,65 @@ body {
   margin: 0 0 1rem;
 }
 
+.session-sync-meta {
+  margin: 0.15rem 0 0.65rem;
+}
+
+.session-sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  background: linear-gradient(
+    130deg,
+    rgba(224, 242, 254, 0.7),
+    rgba(186, 230, 253, 0.45)
+  );
+  color: #0369a1;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  vertical-align: middle;
+}
+
+.session-sync-dot {
+  width: 0.44rem;
+  height: 0.44rem;
+  border-radius: 999px;
+  background: #38bdf8;
+  box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.3);
+}
+
+.session-sync-badge-live {
+  border-color: rgba(14, 116, 144, 0.28);
+  background: linear-gradient(
+    130deg,
+    rgba(224, 242, 254, 0.95),
+    rgba(186, 230, 253, 0.78)
+  );
+  color: #0c4a6e;
+}
+
+.session-sync-badge-live .session-sync-dot {
+  background: #0ea5e9;
+  animation: session-sync-pulse 1.5s ease-out infinite;
+}
+
+@keyframes session-sync-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.35);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(14, 165, 233, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(14, 165, 233, 0);
+  }
+}
+
 .session-copy-feedback {
   flex-basis: 100%;
   margin: 0.1rem 0 0;
@@ -752,7 +811,7 @@ body {
   font-weight: 700;
   background: rgba(124, 58, 237, 0.12);
   color: #6d28d9;
-  margin-top: 0.3rem;
+  margin: 0; /* Remove top margin for alignment */
 }
 
 .passport-badge::before {
@@ -1070,4 +1129,11 @@ body {
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
     monospace;
+}
+
+.badge-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem; /* Space between badges */
+  flex-wrap: nowrap; /* Prevent wrapping */
 }

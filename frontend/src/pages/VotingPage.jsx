@@ -36,6 +36,18 @@ const formatTimestamp = (timestamp) => {
   return `${dateStr}\n${timeStr}`;
 };
 
+const formatSyncTime = (timestampMs) => {
+  if (!timestampMs) {
+    return "--:--:--";
+  }
+
+  return new Intl.DateTimeFormat(navigator.language || "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(timestampMs));
+};
+
 const getVotedCandidatesBySession = async (
   contract,
   account,
@@ -104,7 +116,9 @@ const VotingPage = () => {
   const [sessions, setSessions] = useState([]); // Stores fetched voting sessions
   const [error, setError] = useState(""); // For displaying error messages
   const [loading, setLoading] = useState(false); // Tracks loading state for displaying the spinner
+  const [loadingContext, setLoadingContext] = useState("sessions"); // 'sessions' | 'voting'
   const [sessionErrors, setSessionErrors] = useState({}); // Store errors per session
+  const [postTxSyncUntil, setPostTxSyncUntil] = useState(0);
   const {
     walletConnected,
     account,
@@ -126,88 +140,106 @@ const VotingPage = () => {
   /**
    * Connects the user's wallet using MetaMask and fetches voting sessions.
    */
-  const fetchSessions = useCallback(async () => {
-    try {
-      setLoading(true);
-      const contract = getContract();
-      const sessionCount = Number(await contract.methods.sessionCount().call());
-      const sessionIds = Array.from(
-        { length: sessionCount },
-        (_, index) => index,
-      );
-      const votedCandidatesBySession = await getVotedCandidatesBySession(
-        contract,
-        account,
-        sessionIds,
-      );
+  const fetchSessions = useCallback(
+    async ({ silent = false } = {}) => {
+      try {
+        if (!silent) {
+          setLoadingContext("sessions");
+          setLoading(true);
+        }
+        const contract = getContract();
+        const sessionCount = Number(
+          await contract.methods.sessionCount().call(),
+        );
+        const sessionIds = Array.from(
+          { length: sessionCount },
+          (_, index) => index,
+        );
+        const votedCandidatesBySession = await getVotedCandidatesBySession(
+          contract,
+          account,
+          sessionIds,
+        );
 
-      const currentTime = Math.floor(Date.now() / 1000);
-      const fetchedSessions = [];
+        const currentTime = Math.floor(Date.now() / 1000);
+        const syncedAt = Date.now();
+        const fetchedSessions = [];
 
-      for (let i = 0; i < sessionCount; i++) {
-        const session = await contract.methods.votingSessions(i).call();
-        const candidates = await contract.methods.getCandidates(i).call();
-        const hasVoted = await contract.methods.hasUserVoted(i, account).call();
-        const fallbackCandidateId = getCachedVotedCandidate(i, account);
-        const pendingCandidateId = getPendingVotedCandidate(i, account);
-        let resolvedCandidateId =
-          votedCandidatesBySession[Number(session.id)] ??
-          (hasVoted ? fallbackCandidateId : pendingCandidateId);
+        for (let i = 0; i < sessionCount; i++) {
+          const session = await contract.methods.votingSessions(i).call();
+          const candidates = await contract.methods.getCandidates(i).call();
+          const hasVoted = await contract.methods
+            .hasUserVoted(i, account)
+            .call();
+          const fallbackCandidateId = getCachedVotedCandidate(i, account);
+          const pendingCandidateId = getPendingVotedCandidate(i, account);
+          let resolvedCandidateId =
+            votedCandidatesBySession[Number(session.id)] ??
+            (hasVoted ? fallbackCandidateId : pendingCandidateId);
 
-        if (hasVoted && resolvedCandidateId === null) {
-          const onDemandCandidateId = await resolveVotedCandidateFromEvents(
-            contract,
-            account,
-            i,
-          );
-          if (onDemandCandidateId !== null) {
-            resolvedCandidateId = onDemandCandidateId;
-            cacheVotedCandidate(i, account, onDemandCandidateId);
+          if (hasVoted && resolvedCandidateId === null) {
+            const onDemandCandidateId = await resolveVotedCandidateFromEvents(
+              contract,
+              account,
+              i,
+            );
+            if (onDemandCandidateId !== null) {
+              resolvedCandidateId = onDemandCandidateId;
+              cacheVotedCandidate(i, account, onDemandCandidateId);
+            }
           }
+
+          if (hasVoted) {
+            clearPendingVotedCandidate(i, account);
+          }
+
+          const status = deriveSessionStatus({
+            session,
+            currentTime,
+            candidateCount: candidates.length,
+          });
+          fetchedSessions.push({
+            id: Number(session.id),
+            title: session.title,
+            startTime: Number(session.startTime),
+            endTime: Number(session.endTime),
+            status,
+            hasVoted,
+            votedCandidateId: resolvedCandidateId,
+            isVotePending: !hasVoted && resolvedCandidateId !== null,
+            syncedAt,
+            requiresPassport: session.requiresPassport,
+            candidates: candidates.map((candidate, index) => ({
+              id: index,
+              name: candidate.name,
+              votes: candidate.voteCount,
+            })),
+          });
         }
 
-        if (hasVoted) {
-          clearPendingVotedCandidate(i, account);
-        }
+        // Filter sessions to display only "Not Started" or "Active" sessions
+        const filteredSessions = fetchedSessions.filter(
+          (session) =>
+            session.status === "Not Started" ||
+            session.status === "Active" ||
+            session.status === "Not Ready",
+        );
 
-        const status = deriveSessionStatus({
-          session,
-          currentTime,
-          candidateCount: candidates.length,
-        });
-        fetchedSessions.push({
-          id: Number(session.id),
-          title: session.title,
-          startTime: Number(session.startTime),
-          endTime: Number(session.endTime),
-          status,
-          hasVoted,
-          votedCandidateId: resolvedCandidateId,
-          isVotePending: !hasVoted && resolvedCandidateId !== null,
-          requiresPassport: session.requiresPassport,
-          candidates: candidates.map((candidate, index) => ({
-            id: index,
-            name: candidate.name,
-            votes: candidate.voteCount,
-          })),
-        });
+        setSessions(sortSessionsByRecency(filteredSessions)); // Update state with fetched sessions
+      } catch (err) {
+        if (!silent) {
+          handleError(
+            "Could not load sessions. Check your connection and try again.",
+          );
+        }
+      } finally {
+        if (!silent) {
+          setLoading(false);
+        }
       }
-
-      // Filter sessions to display only "Not Started" or "Active" sessions
-      const filteredSessions = fetchedSessions.filter(
-        (session) =>
-          session.status === "Not Started" ||
-          session.status === "Active" ||
-          session.status === "Not Ready",
-      );
-
-      setSessions(sortSessionsByRecency(filteredSessions)); // Update state with fetched sessions
-    } catch (err) {
-      handleError("Failed to fetch sessions: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [account]);
+    },
+    [account],
+  );
 
   /**
    * Allows the user to vote for a candidate in a specified session.
@@ -220,6 +252,7 @@ const VotingPage = () => {
     );
     console.log(`Using account: ${account}`);
     try {
+      setLoadingContext("voting");
       setLoading(true);
       const contract = getContract();
       console.log("Contract instance retrieved.");
@@ -231,7 +264,7 @@ const VotingPage = () => {
         if (!isHuman) {
           handleSessionError(
             sessionId,
-            "This session requires a Gitcoin Passport score of 20 or higher. Visit passport.xyz to verify your identity.",
+            "This session requires a Gitcoin Passport score of 20 or higher. Visit passport.xyz to verify your identity and then try again.",
           );
           return;
         }
@@ -282,6 +315,7 @@ const VotingPage = () => {
 
       clearPendingVotedCandidate(sessionId, account);
       cacheVotedCandidate(sessionId, account, candidateId);
+      setPostTxSyncUntil(Date.now() + 30000);
       console.log("Vote transaction sent successfully.");
       await fetchSessions(); // Refresh sessions after voting
     } catch (err) {
@@ -289,10 +323,10 @@ const VotingPage = () => {
       console.error("Failed to vote:", err);
       handleSessionError(
         sessionId,
-        "Failed to vote: " +
+        "Your vote could not be submitted: " +
           parseWeb3ErrorMessage(
             err,
-            "Vote transaction failed. Please verify wallet network, gas balance, and Passport eligibility.",
+            "Something went wrong. Please check your wallet and try again.",
           ),
       );
     } finally {
@@ -388,6 +422,32 @@ const VotingPage = () => {
     return () => window.clearInterval(intervalId);
   }, [sessions, fetchSessions]);
 
+  useEffect(() => {
+    if (postTxSyncUntil <= Date.now()) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (Date.now() > postTxSyncUntil) {
+        setPostTxSyncUntil(0);
+        return;
+      }
+
+      fetchSessions({ silent: true });
+    }, 3000);
+
+    return () => window.clearInterval(intervalId);
+  }, [postTxSyncUntil, fetchSessions]);
+
+  useEffect(() => {
+    if (postTxSyncUntil <= Date.now()) return;
+    const timeoutId = setTimeout(
+      () => setPostTxSyncUntil(0),
+      postTxSyncUntil - Date.now(),
+    );
+    return () => clearTimeout(timeoutId);
+  }, [postTxSyncUntil]);
+
   const activeSessions = sessions.filter(
     (session) => session.status === "Active",
   );
@@ -434,7 +494,11 @@ const VotingPage = () => {
             <div className="spinner-border text-primary" role="status">
               <span className="visually-hidden">Loading...</span>
             </div>
-            <p>Refreshing voting data on-chain...</p>
+            <p>
+              {loadingContext === "voting"
+                ? "Submitting your vote..."
+                : "Loading voting sessions..."}
+            </p>
           </div>
         </div>
       )}
@@ -485,10 +549,16 @@ const VotingPage = () => {
         <>
           {error && <div className="alert alert-danger">{error}</div>}
 
+          {postTxSyncUntil > Date.now() && (
+            <div className="alert alert-info" role="status">
+              Fetching the latest results...
+            </div>
+          )}
+
           {isWrongNetwork && (
             <div className="alert alert-warning">
-              Switch wallet network to {CHAIN_NAME} ({SEPOLIA_CHAIN_ID_HEX}) to
-              vote. Detected network: {chainId || "unknown"}.
+              Your wallet is connected to the wrong network. Please switch to{" "}
+              {CHAIN_NAME} to vote.
               <div className="mt-2">
                 <button
                   type="button"
@@ -511,14 +581,38 @@ const VotingPage = () => {
                         Session #{session.id + 1}
                       </p>
                       <h3>{session.title}</h3>
-                      {session.requiresPassport && (
-                        <span
-                          className="passport-badge"
-                          title="Requires Gitcoin Passport score ≥ 20"
-                        >
-                          Passport required
-                        </span>
-                      )}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.5rem",
+                        }}
+                      >
+                        <div className="badge-container">
+                          {session.requiresPassport && (
+                            <span
+                              className="passport-badge"
+                              title="Requires Gitcoin Passport score ≥ 20"
+                            >
+                              Passport required
+                            </span>
+                          )}
+                          <span
+                            className={`session-sync-badge ${
+                              session.isVotePending ||
+                              postTxSyncUntil > Date.now()
+                                ? "session-sync-badge-live"
+                                : ""
+                            }`}
+                          >
+                            <span
+                              className="session-sync-dot"
+                              aria-hidden="true"
+                            />
+                            Last updated: {formatSyncTime(session.syncedAt)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                     <span className={getStatusTone(session.status)}>
                       {session.status}

@@ -4,6 +4,7 @@
   "description": "A decentralized voting application powered by blockchain technology.",
   "main": "index.js",
   "scripts": {
+    "start:prod": "npm run start:prod --prefix frontend",
     "clean": "rm -rf cache artifacts",
     "compile": "hardhat compile",
     "test": "hardhat test",

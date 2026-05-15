@@ -36,6 +36,18 @@ const formatTimestamp = (timestamp) => {
   return `${dateStr}\n${timeStr}`;
 };
 
+const formatSyncTime = (timestampMs) => {
+  if (!timestampMs) {
+    return "--:--";
+  }
+
+  return new Intl.DateTimeFormat(navigator.language || "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(timestampMs));
+};
+
 const formatVoteCount = (count) => `${count} ${count === 1 ? "vote" : "votes"}`;
 
 const deriveSessionStatus = ({ session, currentTime, candidateCount }) => {
@@ -59,6 +71,8 @@ const PublicSessionPage = () => {
   const [error, setError] = useState("");
   const [sessionError, setSessionError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingContext, setLoadingContext] = useState("session"); // 'session' | 'voting'
+  const [postTxSyncUntil, setPostTxSyncUntil] = useState(0);
   const {
     walletConnected,
     account,
@@ -89,123 +103,141 @@ const PublicSessionPage = () => {
     setTimeout(() => setSessionError(""), 4000);
   };
 
-  const fetchSession = useCallback(async () => {
-    if (Number.isNaN(numericSessionId) || numericSessionId < 0) {
-      setSession(null);
-      handleError("Invalid session link.");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const contract = getContract();
-      const sessionCount = Number(await contract.methods.sessionCount().call());
-
-      if (numericSessionId >= sessionCount) {
+  const fetchSession = useCallback(
+    async ({ silent = false } = {}) => {
+      if (Number.isNaN(numericSessionId) || numericSessionId < 0) {
         setSession(null);
-        handleError("This voting session does not exist.");
+        handleError(
+          "This session link is not valid. Please check the URL and try again.",
+        );
         return;
       }
 
-      const sessionData = await contract.methods
-        .votingSessions(numericSessionId)
-        .call();
-      const candidates = await contract.methods
-        .getCandidates(numericSessionId)
-        .call();
+      try {
+        if (!silent) {
+          setLoadingContext("session");
+          setLoading(true);
+        }
+        const contract = getContract();
+        const sessionCount = Number(
+          await contract.methods.sessionCount().call(),
+        );
 
-      const currentTime = Math.floor(Date.now() / 1000);
-      const status = deriveSessionStatus({
-        session: sessionData,
-        currentTime,
-        candidateCount: candidates.length,
-      });
+        if (numericSessionId >= sessionCount) {
+          setSession(null);
+          handleError("This voting session does not exist.");
+          return;
+        }
 
-      const hasVoted = account
-        ? await contract.methods.hasUserVoted(numericSessionId, account).call()
-        : false;
-      const pendingCandidateId = getPendingVotedCandidate(
-        numericSessionId,
-        account,
-      );
+        const sessionData = await contract.methods
+          .votingSessions(numericSessionId)
+          .call();
+        const candidates = await contract.methods
+          .getCandidates(numericSessionId)
+          .call();
 
-      let votedCandidateId = null;
-      if (account && hasVoted) {
-        votedCandidateId = getCachedVotedCandidate(numericSessionId, account);
+        const currentTime = Math.floor(Date.now() / 1000);
+        const syncedAt = Date.now();
+        const status = deriveSessionStatus({
+          session: sessionData,
+          currentTime,
+          candidateCount: candidates.length,
+        });
 
-        try {
-          const latestCandidateId = await resolveVotedCandidateFromEvents(
-            contract,
-            account,
-            numericSessionId,
-          );
+        const hasVoted = account
+          ? await contract.methods
+              .hasUserVoted(numericSessionId, account)
+              .call()
+          : false;
+        const pendingCandidateId = getPendingVotedCandidate(
+          numericSessionId,
+          account,
+        );
 
-          if (latestCandidateId !== null) {
-            votedCandidateId = latestCandidateId;
-            cacheVotedCandidate(numericSessionId, account, latestCandidateId);
+        let votedCandidateId = null;
+        if (account && hasVoted) {
+          votedCandidateId = getCachedVotedCandidate(numericSessionId, account);
+
+          try {
+            const latestCandidateId = await resolveVotedCandidateFromEvents(
+              contract,
+              account,
+              numericSessionId,
+            );
+
+            if (latestCandidateId !== null) {
+              votedCandidateId = latestCandidateId;
+              cacheVotedCandidate(numericSessionId, account, latestCandidateId);
+            }
+          } catch (eventErr) {
+            // Some RPC endpoints intermittently fail on log queries; keep session visible.
+            console.warn(
+              "Could not fetch VoteCast history for voted candidate highlight:",
+              eventErr,
+            );
           }
-        } catch (eventErr) {
-          // Some RPC endpoints intermittently fail on log queries; keep session visible.
-          console.warn(
-            "Could not fetch VoteCast history for voted candidate highlight:",
-            eventErr,
+        } else if (account) {
+          votedCandidateId = pendingCandidateId;
+        }
+
+        if (hasVoted && account) {
+          clearPendingVotedCandidate(numericSessionId, account);
+        }
+
+        let winner = "";
+        let isTie = false;
+        if (status === "Completed" && candidates.length > 0) {
+          try {
+            const result = await contract.methods
+              .getWinner(numericSessionId)
+              .call();
+            winner = result[0];
+            isTie = result[1];
+          } catch {
+            winner = "";
+            isTie = false;
+          }
+        }
+
+        setSession({
+          id: Number(sessionData.id),
+          title: sessionData.title,
+          startTime: Number(sessionData.startTime),
+          endTime: Number(sessionData.endTime),
+          status,
+          hasVoted,
+          votedCandidateId,
+          isVotePending: !hasVoted && votedCandidateId !== null,
+          syncedAt,
+          requiresPassport: sessionData.requiresPassport,
+          winner,
+          isTie,
+          candidates: candidates.map((candidate, index) => ({
+            id: index,
+            name: candidate.name,
+            votes: Number(candidate.voteCount),
+          })),
+        });
+      } catch (err) {
+        if (!silent) {
+          handleError(
+            "Could not load this session. Check your connection and try again.",
           );
         }
-      } else if (account) {
-        votedCandidateId = pendingCandidateId;
-      }
-
-      if (hasVoted && account) {
-        clearPendingVotedCandidate(numericSessionId, account);
-      }
-
-      let winner = "";
-      let isTie = false;
-      if (status === "Completed" && candidates.length > 0) {
-        try {
-          const result = await contract.methods
-            .getWinner(numericSessionId)
-            .call();
-          winner = result[0];
-          isTie = result[1];
-        } catch {
-          winner = "";
-          isTie = false;
+      } finally {
+        if (!silent) {
+          setLoading(false);
         }
       }
-
-      setSession({
-        id: Number(sessionData.id),
-        title: sessionData.title,
-        startTime: Number(sessionData.startTime),
-        endTime: Number(sessionData.endTime),
-        status,
-        hasVoted,
-        votedCandidateId,
-        isVotePending: !hasVoted && votedCandidateId !== null,
-        requiresPassport: sessionData.requiresPassport,
-        winner,
-        isTie,
-        candidates: candidates.map((candidate, index) => ({
-          id: index,
-          name: candidate.name,
-          votes: Number(candidate.voteCount),
-        })),
-      });
-    } catch (err) {
-      handleError(
-        "Failed to load voting session: " +
-          parseWeb3ErrorMessage(err, "RPC endpoint not found or unavailable."),
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [numericSessionId, account]);
+    },
+    [numericSessionId, account],
+  );
 
   const voteForCandidate = async (candidateId) => {
     if (!session) return;
 
     try {
+      setLoadingContext("voting");
       setLoading(true);
 
       // Pre-check Gitcoin Passport if the session requires it
@@ -213,7 +245,7 @@ const PublicSessionPage = () => {
         const isHuman = await checkPassportIsHuman(account);
         if (!isHuman) {
           handleSessionError(
-            "This session requires a Gitcoin Passport score of 20 or higher. Visit passport.xyz to verify your identity.",
+            "This session requires a Gitcoin Passport score of 20 or higher. Visit passport.xyz to verify your identity and then try again.",
           );
           return;
         }
@@ -251,14 +283,15 @@ const PublicSessionPage = () => {
       }
       clearPendingVotedCandidate(session.id, account);
       cacheVotedCandidate(session.id, account, candidateId);
+      setPostTxSyncUntil(Date.now() + 30000);
       await fetchSession();
     } catch (err) {
       clearPendingVotedCandidate(session.id, account);
       handleSessionError(
-        "Failed to vote: " +
+        "Your vote could not be submitted: " +
           parseWeb3ErrorMessage(
             err,
-            "Vote transaction failed. Please verify wallet network, gas balance, and Passport eligibility.",
+            "Something went wrong. Please check your wallet and try again.",
           ),
       );
     } finally {
@@ -299,6 +332,32 @@ const PublicSessionPage = () => {
     return () => window.clearInterval(intervalId);
   }, [session, fetchSession]);
 
+  useEffect(() => {
+    if (postTxSyncUntil <= Date.now()) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (Date.now() > postTxSyncUntil) {
+        setPostTxSyncUntil(0);
+        return;
+      }
+
+      fetchSession({ silent: true });
+    }, 3000);
+
+    return () => window.clearInterval(intervalId);
+  }, [postTxSyncUntil, fetchSession]);
+
+  useEffect(() => {
+    if (postTxSyncUntil <= Date.now()) return;
+    const timeoutId = setTimeout(
+      () => setPostTxSyncUntil(0),
+      postTxSyncUntil - Date.now(),
+    );
+    return () => clearTimeout(timeoutId);
+  }, [postTxSyncUntil]);
+
   return (
     <div className="container page-shell">
       <section className="page-hero page-hero-voting">
@@ -333,7 +392,11 @@ const PublicSessionPage = () => {
             <div className="spinner-border text-primary" role="status">
               <span className="visually-hidden">Loading...</span>
             </div>
-            <p>Syncing this session from on-chain data...</p>
+            <p>
+              {loadingContext === "voting"
+                ? "Submitting your vote..."
+                : "Loading session details..."}
+            </p>
           </div>
         </div>
       )}
@@ -343,10 +406,7 @@ const PublicSessionPage = () => {
           <div>
             <p className="page-kicker">Wallet required</p>
             <h2>Connect your wallet to access this session.</h2>
-            <p>
-              You need a wallet connection to read this session state and cast a
-              vote securely on Sepolia.
-            </p>
+            <p>You need a wallet connection to participate in this session.</p>
           </div>
           <div className="connect-panel-side">
             <button
@@ -364,10 +424,16 @@ const PublicSessionPage = () => {
         <>
           {error && <div className="alert alert-danger">{error}</div>}
 
+          {postTxSyncUntil > Date.now() && (
+            <div className="alert alert-info" role="status">
+              Fetching the latest results...
+            </div>
+          )}
+
           {isWrongNetwork && (
             <div className="alert alert-warning">
-              Switch wallet network to {CHAIN_NAME} ({SEPOLIA_CHAIN_ID_HEX}) to
-              use this session link. Detected network: {chainId || "unknown"}.
+              Your wallet is connected to the wrong network. Please switch to{" "}
+              {CHAIN_NAME} to use this session.
               <div className="mt-2">
                 <button
                   type="button"
@@ -395,14 +461,26 @@ const PublicSessionPage = () => {
                   <div>
                     <p className="session-eyebrow">Session #{session.id + 1}</p>
                     <h3>{session.title}</h3>
-                    {session.requiresPassport && (
+                    <div className="badge-container">
+                      {session.requiresPassport && (
+                        <span
+                          className="passport-badge"
+                          title="Requires Gitcoin Passport score ≥ 20"
+                        >
+                          Passport required
+                        </span>
+                      )}
                       <span
-                        className="passport-badge"
-                        title="Requires Gitcoin Passport score ≥ 20"
+                        className={`session-sync-badge ${
+                          session.isVotePending || postTxSyncUntil > Date.now()
+                            ? "session-sync-badge-live"
+                            : ""
+                        }`}
                       >
-                        Passport required
+                        <span className="session-sync-dot" aria-hidden="true" />
+                        Last updated: {formatSyncTime(session.syncedAt)}
                       </span>
-                    )}
+                    </div>
                   </div>
                   <span className={getStatusTone(session.status)}>
                     {session.status}

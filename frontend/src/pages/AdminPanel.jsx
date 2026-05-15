@@ -30,6 +30,18 @@ const formatTimestamp = (timestamp) => {
   return `${dateStr}\n${timeStr}`;
 };
 
+const formatSyncTime = (timestampMs) => {
+  if (!timestampMs) {
+    return "--:--";
+  }
+
+  return new Intl.DateTimeFormat(navigator.language || "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(timestampMs));
+};
+
 const toSafeNumber = (value) => {
   try {
     const parsed = Number(value);
@@ -73,6 +85,7 @@ const AdminPanel = () => {
   const [feedbackTarget, setFeedbackTarget] = useState("global");
   const [loading, setLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
+  const [postTxSyncUntil, setPostTxSyncUntil] = useState(0);
   const [copiedSessionId, setCopiedSessionId] = useState(null);
   const {
     walletConnected,
@@ -135,7 +148,10 @@ const AdminPanel = () => {
       setCopiedSessionId(sessionId);
       setTimeout(() => setCopiedSessionId(null), 2000);
     } catch (err) {
-      handleError("Failed to copy link: " + err.message, "global");
+      handleError(
+        "Could not copy the link. Try copying it manually.",
+        "global",
+      );
     }
   };
 
@@ -203,73 +219,90 @@ const AdminPanel = () => {
     }
   }, []);
 
-  const fetchSessions = useCallback(async () => {
-    try {
-      setLoading(true);
-      const contract = getContract();
-      const sessionCount = Number(await contract.methods.sessionCount().call());
-      const currentTime = Math.floor(Date.now() / 1000);
-      const fetchedSessions = [];
+  const fetchSessions = useCallback(
+    async ({ silent = false } = {}) => {
+      try {
+        if (!silent) {
+          setLoading(true);
+        }
+        const contract = getContract();
+        const sessionCount = Number(
+          await contract.methods.sessionCount().call(),
+        );
+        const currentTime = Math.floor(Date.now() / 1000);
+        const syncedAt = Date.now();
+        const fetchedSessions = [];
 
-      for (let i = 0; i < sessionCount; i++) {
-        try {
-          const session = await contract.methods.votingSessions(i).call();
-          const candidates = await contract.methods.getCandidates(i).call();
-          const status = deriveSessionStatus({
-            session,
-            currentTime,
-            candidateCount: candidates.length,
-          });
+        for (let i = 0; i < sessionCount; i++) {
+          try {
+            const session = await contract.methods.votingSessions(i).call();
+            const candidates = await contract.methods.getCandidates(i).call();
+            const status = deriveSessionStatus({
+              session,
+              currentTime,
+              candidateCount: candidates.length,
+            });
 
-          let winner = "";
-          let isTie = false;
+            let winner = "";
+            let isTie = false;
 
-          if (status === "Completed" && candidates.length > 0) {
-            try {
-              const result = await contract.methods.getWinner(i).call();
-              winner = result[0];
-              isTie = result[1];
-            } catch (error) {
-              console.error(
-                `Error fetching winner for session ${i}:`,
-                error.message,
-              );
+            if (status === "Completed" && candidates.length > 0) {
+              try {
+                const result = await contract.methods.getWinner(i).call();
+                winner = result[0];
+                isTie = result[1];
+              } catch (error) {
+                console.error(
+                  `Error fetching winner for session ${i}:`,
+                  error.message,
+                );
+              }
             }
-          }
 
-          fetchedSessions.push({
-            id: Number(session.id),
-            title: session.title,
-            startTime: Number(session.startTime),
-            endTime: Number(session.endTime),
-            status,
-            creator: session.creator,
-            requiresPassport: session.requiresPassport,
-            winner: candidates.length > 0 ? winner : "No candidates",
-            isTie: candidates.length > 0 && isTie,
-          });
-        } catch (sessionErr) {
-          // Skip a malformed/unreadable session entry rather than failing the entire list.
-          console.error(`Error fetching session ${i}:`, sessionErr);
+            fetchedSessions.push({
+              id: Number(session.id),
+              title: session.title,
+              startTime: Number(session.startTime),
+              endTime: Number(session.endTime),
+              status,
+              creator: session.creator,
+              requiresPassport: session.requiresPassport,
+              winner: candidates.length > 0 ? winner : "No candidates",
+              isTie: candidates.length > 0 && isTie,
+              syncedAt,
+            });
+          } catch (sessionErr) {
+            // Skip a malformed/unreadable session entry rather than failing the entire list.
+            console.error(`Error fetching session ${i}:`, sessionErr);
+          }
+        }
+
+        setSessions(sortSessionsByRecency(fetchedSessions));
+        await Promise.all(
+          fetchedSessions.map((session) => fetchCandidates(session.id)),
+        );
+      } catch (err) {
+        console.error("Error fetching sessions:", err);
+        if (!silent) {
+          handleError(
+            "Could not load sessions. Check your connection and try again.",
+          );
+        }
+      } finally {
+        if (!silent) {
+          setLoading(false);
         }
       }
-
-      setSessions(sortSessionsByRecency(fetchedSessions));
-      await Promise.all(
-        fetchedSessions.map((session) => fetchCandidates(session.id)),
-      );
-    } catch (err) {
-      console.error("Error fetching sessions:", err);
-      handleError("Failed to fetch sessions: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [fetchCandidates]);
+    },
+    [fetchCandidates],
+  );
 
   const createSession = async () => {
     try {
       if (!title || !startTime || !endTime) {
-        throw new Error("Please fill in all required fields.");
+        throw new Error(
+          "Please fill in all required fields before continuing.",
+        );
       }
 
       setLoading(true);
@@ -307,15 +340,16 @@ const AdminPanel = () => {
       setRequiresPassport(false);
 
       await fetchSessions();
+      setPostTxSyncUntil(Date.now() + 30000);
       setPendingAction(null);
       setSelectedSessionId(String(createdSessionId));
-      handleSuccess("Voting session created successfully!", "create");
+      handleSuccess("Your voting session was created!", "create");
     } catch (err) {
       setPendingAction(null);
       console.error("Error creating session:", err);
       handleError(
-        "Failed to create session: " +
-          parseWeb3ErrorMessage(err, "Transaction failed."),
+        "Could not create the session: " +
+          parseWeb3ErrorMessage(err, "Something went wrong. Please try again."),
         "create",
       );
     } finally {
@@ -326,16 +360,16 @@ const AdminPanel = () => {
   const addCandidate = async () => {
     try {
       if (!selectedSessionId || candidateName.trim() === "") {
-        throw new Error(
-          "Please select a valid session and enter a candidate name.",
-        );
+        throw new Error("Please select a session and enter a candidate name.");
       }
 
       setLoading(true);
 
       const sessionId = Number(selectedSessionId);
       if (Number.isNaN(sessionId)) {
-        throw new Error("Invalid session ID.");
+        throw new Error(
+          "Could not find the selected session. Please refresh and try again.",
+        );
       }
 
       const selectedSession = sessions.find(
@@ -348,7 +382,7 @@ const AdminPanel = () => {
       const currentTime = Math.floor(Date.now() / 1000);
       if (currentTime > selectedSession.endTime) {
         throw new Error(
-          "You cannot add a candidate to a voting session that has already ended.",
+          "This voting session has already ended. Candidates can only be added before it starts.",
         );
       }
 
@@ -356,12 +390,14 @@ const AdminPanel = () => {
         currentTime >= selectedSession.startTime &&
         currentTime <= selectedSession.endTime
       ) {
-        throw new Error("Candidates cannot be added during the voting period.");
+        throw new Error(
+          "Voting is currently open. Candidates can only be added before the session starts.",
+        );
       }
 
       if (selectedSession.creator.toLowerCase() !== account.toLowerCase()) {
         throw new Error(
-          "Only the creator of this voting session can add candidates.",
+          "Only the wallet that created this session can add candidates.",
         );
       }
 
@@ -374,13 +410,17 @@ const AdminPanel = () => {
       setCandidateName("");
       await fetchCandidates(sessionId);
       await fetchSessions();
+      setPostTxSyncUntil(Date.now() + 30000);
       setPendingAction(null);
       handleSuccess("Candidate added successfully!", "candidate");
     } catch (err) {
       setPendingAction(null);
       console.error("Error adding candidate:", err);
       handleError(
-        parseWeb3ErrorMessage(err, "Failed to add candidate."),
+        parseWeb3ErrorMessage(
+          err,
+          "Could not add the candidate. Please try again.",
+        ),
         "candidate",
       );
     } finally {
@@ -424,6 +464,32 @@ const AdminPanel = () => {
 
     return () => window.clearInterval(intervalId);
   }, [pendingAction, fetchCandidates, fetchSessions]);
+
+  useEffect(() => {
+    if (postTxSyncUntil <= Date.now()) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (Date.now() > postTxSyncUntil) {
+        setPostTxSyncUntil(0);
+        return;
+      }
+
+      fetchSessions({ silent: true });
+    }, 3000);
+
+    return () => window.clearInterval(intervalId);
+  }, [postTxSyncUntil, fetchSessions]);
+
+  useEffect(() => {
+    if (postTxSyncUntil <= Date.now()) return;
+    const timeoutId = setTimeout(
+      () => setPostTxSyncUntil(0),
+      postTxSyncUntil - Date.now(),
+    );
+    return () => clearTimeout(timeoutId);
+  }, [postTxSyncUntil]);
 
   const managedSessions = sessions.filter(
     (session) => session.creator.toLowerCase() === account.toLowerCase(),
@@ -473,10 +539,12 @@ const AdminPanel = () => {
             </div>
             <p>
               {pendingAction?.txHash
-                ? `Transaction submitted (${shortenAddress(
+                ? `Transaction sent (${shortenAddress(
                     pendingAction.txHash,
-                  )}). Waiting for blockchain confirmation...`
-                : "Syncing admin actions with the contract..."}
+                  )}). Waiting for confirmation on the blockchain...`
+                : pendingAction
+                  ? "Saving your changes to the blockchain..."
+                  : "Loading sessions..."}
             </p>
           </div>
         </div>
@@ -524,8 +592,8 @@ const AdminPanel = () => {
         <>
           {isWrongNetwork && (
             <div className="alert alert-warning">
-              Switch wallet network to {CHAIN_NAME} ({SEPOLIA_CHAIN_ID_HEX}) to
-              use admin actions. Detected network: {chainId || "unknown"}.
+              Your wallet is connected to the wrong network. Please switch to{" "}
+              {CHAIN_NAME} to use admin actions.
               <div className="mt-2">
                 <button
                   type="button"
@@ -540,6 +608,17 @@ const AdminPanel = () => {
 
           {(successMessage || errorMessage) && feedbackTarget === "global" && (
             <section className="admin-feedback-region" aria-live="polite">
+              {postTxSyncUntil > Date.now() && (
+                <div
+                  className="admin-feedback-toast admin-feedback-toast-success"
+                  role="status"
+                >
+                  <span className="admin-feedback-label">Syncing</span>
+                  <strong className="admin-feedback-message">
+                    Updating on-chain changes in the background...
+                  </strong>
+                </div>
+              )}
               {successMessage && (
                 <div
                   className="admin-feedback-toast admin-feedback-toast-success"
@@ -665,7 +744,7 @@ const AdminPanel = () => {
                   >
                     <span className="admin-feedback-label">Pending</span>
                     <strong className="admin-feedback-message">
-                      Transaction submitted in MetaMask. Waiting for network
+                      Transaction submitted in your wallet. Waiting for network
                       confirmation.
                     </strong>
                   </div>
@@ -824,14 +903,26 @@ const AdminPanel = () => {
                   <div>
                     <p className="session-eyebrow">Session #{session.id + 1}</p>
                     <h3>{session.title}</h3>
-                    {session.requiresPassport && (
+                    <div className="badge-container">
+                      {session.requiresPassport && (
+                        <span
+                          className="passport-badge"
+                          title="Requires Gitcoin Passport score ≥ 20"
+                        >
+                          Passport required
+                        </span>
+                      )}
                       <span
-                        className="passport-badge"
-                        title="Requires Gitcoin Passport score ≥ 20"
+                        className={`session-sync-badge ${
+                          postTxSyncUntil > Date.now()
+                            ? "session-sync-badge-live"
+                            : ""
+                        }`}
                       >
-                        Passport required
+                        <span className="session-sync-dot" aria-hidden="true" />
+                        Last updated: {formatSyncTime(session.syncedAt)}
                       </span>
-                    )}
+                    </div>
                   </div>
                   <span className={getStatusTone(session.status)}>
                     {session.status}

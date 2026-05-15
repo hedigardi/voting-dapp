@@ -25,6 +25,18 @@ const formatTimestamp = (timestamp) => {
   return `${dateStr}\n${timeStr}`;
 };
 
+const formatSyncTime = (timestampMs) => {
+  if (!timestampMs) {
+    return "--:--";
+  }
+
+  return new Intl.DateTimeFormat(navigator.language || "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(timestampMs));
+};
+
 const formatVoteCount = (count) => `${count} ${count === 1 ? "vote" : "votes"}`;
 
 const deriveSessionStatus = ({ session, currentTime, candidateCount }) => {
@@ -92,6 +104,7 @@ const ResultsPage = () => {
       const sessionCount = await contract.methods.sessionCount().call();
 
       const currentTime = Math.floor(Date.now() / 1000);
+      const syncedAt = Date.now();
       const fetchedSessions = [];
 
       for (let i = 0; i < sessionCount; i++) {
@@ -127,6 +140,7 @@ const ResultsPage = () => {
           startTime: Number(session.startTime),
           endTime: Number(session.endTime),
           status,
+          syncedAt,
           winner: candidates.length > 0 ? winner : "No candidates",
           isTie: candidates.length > 0 && isTie,
           candidates: candidates.map((candidate, index) => ({
@@ -140,7 +154,7 @@ const ResultsPage = () => {
       setSessions(sortSessionsByRecency(fetchedSessions)); // Update state with fetched sessions
     } catch (err) {
       console.error("Error fetching results:", err);
-      setError("Failed to fetch results: " + err.message);
+      setError("Could not load results. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -153,6 +167,24 @@ const ResultsPage = () => {
     }
 
     fetchResults();
+  }, [
+    walletConnected,
+    account,
+    hasResolvedChainId,
+    isWrongNetwork,
+    fetchResults,
+  ]);
+
+  useEffect(() => {
+    if (!walletConnected || !account || !hasResolvedChainId || isWrongNetwork) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      fetchResults();
+    }, 12000);
+
+    return () => window.clearInterval(intervalId);
   }, [
     walletConnected,
     account,
@@ -259,8 +291,8 @@ const ResultsPage = () => {
 
           {isWrongNetwork && (
             <div className="alert alert-warning">
-              Switch wallet network to {CHAIN_NAME} ({SEPOLIA_CHAIN_ID_HEX}) to
-              view accurate results. Detected network: {chainId || "unknown"}.
+              Your wallet is connected to the wrong network. Please switch to{" "}
+              {CHAIN_NAME} to view results.
               <div className="mt-2">
                 <button
                   type="button"
@@ -286,6 +318,13 @@ const ResultsPage = () => {
                     </div>
                     <span className={getStatusTone(session.status)}>
                       {session.status}
+                    </span>
+                  </div>
+
+                  <div className="session-sync-meta">
+                    <span className="session-sync-badge">
+                      <span className="session-sync-dot" aria-hidden="true" />
+                      Last updated: {formatSyncTime(session.syncedAt)}
                     </span>
                   </div>
 

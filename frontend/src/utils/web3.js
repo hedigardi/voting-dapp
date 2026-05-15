@@ -109,7 +109,7 @@ export const switchToSupportedNetwork = async () => {
 
 export const assertCanSendTransaction = async (account) => {
   if (!account) {
-    throw new Error("No connected wallet account available.");
+    throw new Error("No wallet connected. Please connect your wallet first.");
   }
 
   const ethereum = getEthereum();
@@ -120,7 +120,7 @@ export const assertCanSendTransaction = async (account) => {
 
   if (detectedChainId !== expectedChainId) {
     throw new Error(
-      `Wrong network for transaction. Expected ${CHAIN_NAME} (${expectedChainId}), detected ${detectedChainId || "unknown"}.`,
+      `You're on the wrong network. Please switch to ${CHAIN_NAME} in your wallet and try again.`,
     );
   }
 
@@ -129,9 +129,7 @@ export const assertCanSendTransaction = async (account) => {
   const hasPositiveBalance = !!rawBalance && !/^0+$/.test(String(rawBalance));
 
   if (!hasPositiveBalance) {
-    throw new Error(
-      `Insufficient gas funds on ${CHAIN_NAME}. Add OP Sepolia ETH from a faucet before sending transactions.`,
-    );
+    throw new Error(`Your wallet has no funds to cover the transaction fee.`);
   }
 
   // Prevent nonce-collision replacement errors by ensuring there are no stuck pending txs.
@@ -140,7 +138,7 @@ export const assertCanSendTransaction = async (account) => {
 
   if (pendingNonce > latestNonce) {
     throw new Error(
-      `You have pending transactions in your wallet (${pendingNonce - latestNonce}). Confirm, speed up, or cancel them in MetaMask before sending a new transaction.`,
+      `You have ${pendingNonce - latestNonce} pending transaction(s) in your wallet. Please confirm or cancel them before trying again.`,
     );
   }
 };
@@ -215,7 +213,7 @@ export const parseWeb3ErrorMessage = (
   }
 
   if (/replacement transaction underpriced/i.test(normalized)) {
-    return "MetaMask still has a pending transaction with the same nonce. Open MetaMask activity and Speed Up or Cancel the pending tx, then try again.";
+    return "MetaMask has a stuck transaction. Open MetaMask → Activity and speed up or cancel it, then try again.";
   }
 
   return normalized || fallback;
