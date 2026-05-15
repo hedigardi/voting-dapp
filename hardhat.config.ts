@@ -1,10 +1,13 @@
 import { HardhatUserConfig, vars } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 
-// Environment variables to keep sensitive data secure
-const ETHERSCAN_API_KEY = vars.get("ETHERSCAN_API_KEY"); // Etherscan API key for contract verification
-const ALCHEMY_API_KEY = vars.get("ALCHEMY_API_KEY"); // Alchemy API key for connecting to networks
-const SEPOLIA_PRIVATE_KEY = vars.get("SEPOLIA_PRIVATE_KEY"); // Private key for testnet account
+const readVar = (name: string) => (vars.has(name) ? vars.get(name) : "");
+
+// Optional for local compile/test, required for live deployment/verification.
+const ETHERSCAN_API_KEY = readVar("ETHERSCAN_API_KEY");
+const ALCHEMY_API_KEY = readVar("ALCHEMY_API_KEY");
+const SEPOLIA_PRIVATE_KEY = readVar("SEPOLIA_PRIVATE_KEY");
+const hasDeploySecrets = Boolean(ALCHEMY_API_KEY && SEPOLIA_PRIVATE_KEY);
 
 // Hardhat configuration object
 const config: HardhatUserConfig = {
@@ -14,7 +17,7 @@ const config: HardhatUserConfig = {
   etherscan: {
     apiKey: {
       sepolia: ETHERSCAN_API_KEY,
-      optimismSepolia: ETHERSCAN_API_KEY, // Etherscan unified API key works for OP too
+      optimismSepolia: ETHERSCAN_API_KEY,
     },
   },
 
@@ -28,15 +31,19 @@ const config: HardhatUserConfig = {
       },
       blockGasLimit: 12000000, // Increase block gas limit for larger transactions
     },
-    sepolia: {
-      url: `https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
-      accounts: [SEPOLIA_PRIVATE_KEY],
-    },
-    optimismSepolia: {
-      url: `https://opt-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
-      accounts: [SEPOLIA_PRIVATE_KEY],
-      chainId: 11155420,
-    },
+    ...(hasDeploySecrets
+      ? {
+          sepolia: {
+            url: `https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+            accounts: [SEPOLIA_PRIVATE_KEY],
+          },
+          optimismSepolia: {
+            url: `https://opt-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+            accounts: [SEPOLIA_PRIVATE_KEY],
+            chainId: 11155420,
+          },
+        }
+      : {}),
   },
 
   // Sourcify configuration for source code verification

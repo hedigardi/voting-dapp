@@ -7,7 +7,32 @@ describe("VotingContract", function () {
   async function deployVotingFixture() {
     const [owner, user1, user2] = await ethers.getSigners(); // Get test accounts
     const VotingContract = await ethers.getContractFactory("VotingContract"); // Fetch contract factory
-    const votingContract = await VotingContract.deploy(); // Deploy the contract
+    const votingContractRaw = await VotingContract.deploy(ethers.ZeroAddress); // Deploy the contract
+    const votingContract = new Proxy(votingContractRaw, {
+      get(target, prop, receiver) {
+        if (prop === "createVotingSession") {
+          return (...args: any[]) => {
+            if (args.length === 3) {
+              return target.createVotingSession(
+                args[0],
+                args[1],
+                args[2],
+                false,
+              );
+            }
+
+            return target.createVotingSession(
+              args[0],
+              args[1],
+              args[2],
+              args[3],
+            );
+          };
+        }
+
+        return Reflect.get(target, prop, receiver);
+      },
+    });
     return { votingContract, owner, user1, user2 }; // Return deployed contract and accounts
   }
 
@@ -30,7 +55,7 @@ describe("VotingContract", function () {
         votingContract.createVotingSession("Test Voting", startTime, endTime),
       )
         .to.emit(votingContract, "VotingSessionCreated")
-        .withArgs(owner.address, 0, "Test Voting", startTime, endTime);
+        .withArgs(owner.address, 0, "Test Voting", startTime, endTime, false);
 
       const session = await votingContract.votingSessions(0);
       expect(session.title).to.equal("Test Voting");

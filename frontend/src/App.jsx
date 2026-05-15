@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BrowserRouter as Router,
   Navigate,
@@ -44,7 +44,6 @@ const GuardedRoutes = () => {
   return (
     <Routes>
       <Route path="/" element={<VotingPage />} />
-      <Route path="/voting/:sessionId" element={<VotingPage />} />
       <Route path="/s/:sessionId" element={<PublicSessionPage />} />
       <Route path="/admin" element={<AdminPanel />} />
       <Route path="/results" element={<ResultsPage />} />

@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "../hooks/useWallet";
 import {
-  getContract,
+  getReadOnlyContract,
   CHAIN_NAME,
   sortSessionsByRecency,
   switchToSupportedNetwork,
@@ -97,7 +97,7 @@ const ResultsPage = () => {
   const fetchResults = useCallback(async () => {
     try {
       setLoading(true);
-      const contract = getContract();
+      const contract = getReadOnlyContract();
 
       const sessionCount = await contract.methods.sessionCount().call();
 

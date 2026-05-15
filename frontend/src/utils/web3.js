@@ -1,11 +1,28 @@
 import Web3 from "web3";
 import { contractABI, contractAddress } from "./contractConfig";
 
-// Optimism Sepolia (chain ID 11155420 = 0xaa37dc)
-export const SEPOLIA_CHAIN_ID_HEX = "0xaa37dc";
-export const CHAIN_NAME = "Optimism Sepolia";
-const CHAIN_RPC_URLS = ["https://sepolia.optimism.io"];
-const CHAIN_BLOCK_EXPLORER_URLS = ["https://sepolia-optimism.etherscan.io"];
+const readEnvValue = (key, fallbackValue = "") => {
+  const value = import.meta.env?.[key];
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  return fallbackValue;
+};
+
+const CHAIN_ID_HEX_FROM_ENV = readEnvValue("VITE_CHAIN_ID_HEX");
+const CHAIN_NAME_FROM_ENV = readEnvValue("VITE_CHAIN_NAME");
+const CHAIN_RPC_URL_FROM_ENV = readEnvValue("VITE_CHAIN_RPC_URL");
+const CHAIN_EXPLORER_URL_FROM_ENV = readEnvValue("VITE_CHAIN_EXPLORER_URL");
+
+// Defaults for Optimism Sepolia (chain ID 11155420 = 0xaa37dc)
+export const SEPOLIA_CHAIN_ID_HEX = CHAIN_ID_HEX_FROM_ENV || "0xaa37dc";
+export const CHAIN_NAME = CHAIN_NAME_FROM_ENV || "Optimism Sepolia";
+const CHAIN_RPC_URLS = [
+  CHAIN_RPC_URL_FROM_ENV || "https://sepolia.optimism.io",
+];
+const CHAIN_BLOCK_EXPLORER_URLS = [
+  CHAIN_EXPLORER_URL_FROM_ENV || "https://sepolia-optimism.etherscan.io",
+];
 
 export const normalizeChainId = (chainId = "") => {
   if (chainId === null || chainId === undefined || chainId === "") {
@@ -36,8 +53,9 @@ export const normalizeChainId = (chainId = "") => {
   return normalized;
 };
 
-// Gitcoin Passport Decoder on Optimism Sepolia
-const PASSPORT_DECODER_ADDRESS = "0xe53C60F8069C2f0c3a84F9B3DB5cf56f3100ba56";
+const PASSPORT_DECODER_ADDRESS =
+  readEnvValue("VITE_PASSPORT_DECODER_ADDRESS") ||
+  "0xe53C60F8069C2f0c3a84F9B3DB5cf56f3100ba56";
 const PASSPORT_DECODER_ABI = [
   {
     inputs: [{ internalType: "address", name: "userAddress", type: "address" }],
@@ -145,6 +163,14 @@ export const assertCanSendTransaction = async (account) => {
 
 export const getContract = () => {
   const web3 = getWeb3();
+  return new web3.eth.Contract(contractABI, contractAddress);
+};
+
+// Uses the public RPC directly so read-only calls don't go through MetaMask.
+// This is more reliable than MetaMask's internal RPC endpoint and works even
+// when the user has not yet connected their wallet.
+export const getReadOnlyContract = () => {
+  const web3 = new Web3(CHAIN_RPC_URLS[0]);
   return new web3.eth.Contract(contractABI, contractAddress);
 };
 

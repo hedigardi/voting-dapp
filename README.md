@@ -1,168 +1,133 @@
 # Voting dApp
 
-A decentralized application (dApp) for conducting transparent and efficient voting processes on the Ethereum blockchain.
+Decentralized voting application with a Solidity smart contract (Hardhat) and React frontend.
 
-## Table of Contents
+## Usage Guidelines
 
-- [Overview](#overview)
-- [Features](#features)
-- [Technologies Used](#technologies-used)
-- [Prerequisites](#prerequisites)
-- [Setup Instructions](#setup-instructions)
-- [Usage Guidelines](#usage-guidelines)
-- [Smart Contract Overview](#smart-contract-overview)
-- [Testing](#testing)
-- [License](#license)
+The application has two distinct roles: **admin** and **voter**.
 
----
+### As a voter
 
-## Overview
+1. Open the app and navigate to the **Voting** page.
+2. Connect your wallet (Optimism Sepolia network).
+3. Browse active and upcoming sessions. Each session shows its title, candidate list, start/end time, and current status.
+4. Click **Vote** next to the candidate of your choice. Confirm the transaction in your wallet.
+5. Your vote is recorded on-chain. The session card updates immediately to reflect your choice.
+6. Navigate to the **Results** page at any time to see live vote counts for all sessions, including completed ones and declared winners.
 
-Voting dApp is a blockchain-based decentralized application that facilitates secure and transparent voting processes. The application supports the creation of voting sessions, allows participants to vote, and displays results after voting concludes.
+> Some sessions are marked as **Passport required**. These require a [Gitcoin Passport](https://passport.xyz) humanity score of 20 or higher. Verify your identity at passport.xyz before voting in those sessions.
 
----
+### As an admin
 
-## Features
+The wallet that deployed the contract is the owner and has exclusive access to the **Admin Panel**.
 
-- **Admin Features**:
-  - Create voting sessions with start and end times.
-  - Add candidates to voting sessions.
-  - Archive completed voting sessions.
-
-- **User Features**:
-  - View active and upcoming voting sessions.
-  - Cast votes for candidates during voting periods.
-  - View voting results, including winners or ties.
-
-- **Smart Contract**:
-  - Ensures transparency and immutability.
-  - Prevents duplicate voting and restricts access to authorized actions.
+1. Connect the owner wallet and navigate to **Admin**.
+2. Create a new voting session by providing a title, start time, end time, and whether Gitcoin Passport verification is required.
+3. Add candidates to the session.
+4. Once the start time is reached, the session becomes active and voters can participate.
+5. After the end time passes the session is marked as Completed and a winner is declared automatically on the Results page.
 
 ---
 
-## Technologies Used
-- **Frontend**: React, Bootstrap
-- **Smart Contracts**: Solidity
-- **Testing Framework**: Hardhat, Chai
-- **Blockchain Network**: Ethereum (Sepolia Testnet)
-- **Wallet Integration**: MetaMask
-- **Smart Contract Interaction**: Web3.js
+## Current Network
 
----
+- Frontend target network: Optimism Sepolia (`chainId 11155420`, `0xaa37dc`)
+- Deployed contract: `0xd8eb00a7c30A5de84732719137529db6e06BdD76`
+- Gitcoin Passport decoder: `0xe53C60F8069C2f0c3a84F9B3DB5cf56f3100ba56`
 
-## Prerequisites
+## Tech Stack
 
-Before setting up the project, ensure you have the following installed:
+- Frontend: React 18, Vite, React Router v6, Bootstrap 5, Web3.js v4
+- Smart contracts: Solidity 0.8, OpenZeppelin (Ownable, ReentrancyGuard)
+- Tooling: Hardhat, TypeScript, Ignition
 
-- [Node.js](https://nodejs.org/) (v16 or higher)
-- [npm](https://www.npmjs.com/) or [yarn](https://yarnpkg.com/)
-- [MetaMask](https://metamask.io/) browser extension
-- [Hardhat](https://hardhat.org/) development environment
+## Local Setup
 
----
+1. Install dependencies:
 
-## Setup Instructions
-
-### Clone the Repository
-```sh
-git clone https://github.com/hedigardi/test-voting.git
-cd test-voting
-```
-
-### Install Dependencies
-Run the following command to install all required dependencies:
 ```sh
 npm install
-cd frontend
-npm install
+npm install --prefix frontend
 ```
 
-### Configure Environment Variables
-Create a `.env` file in the root directory with the following keys:
+2. Optional Hardhat vars for deploy/verify:
+
 ```sh
-ALCHEMY_API_KEY=your-alchemy-api-key
-SEPOLIA_PRIVATE_KEY=your-private-key
-ETHERSCAN_API_KEY=your-etherscan-api-key
+npx hardhat vars set ALCHEMY_API_KEY
+npx hardhat vars set SEPOLIA_PRIVATE_KEY
+npx hardhat vars set ETHERSCAN_API_KEY
 ```
 
-### Compile the Smart Contract
+3. Compile the contract and sync the ABI to the frontend:
+
 ```sh
 npm run compile
 ```
 
-### Deploy the Smart Contract
-Deploy the smart contract to the Sepolia network:
-```sh
-npx hardhat ignition deploy ignition/modules/{smart-contract-name}.ts --network sepolia --verify
-```
-Update the `contractAddress` in `src/utils/contractConfig.js` with the deployed contract address.
+4. Run tests:
 
-### Run the Development Server
-Start the React frontend:
-```sh
-cd frontend
-npm start
-```
----
-
-## Usage Guidelines
-### 1. Connect Wallet
-  * Users must connect their MetaMask wallet to interact with the DApp.
-  * If no wallet is connected, the app prompts the user to connect.
-    
-### 2. Create Voting Sessions (Admin)
-  * Navigate to the Admin Panel to create voting sessions.
-  * Provide a title, start time, and end time for the session.
-    
-### 3. Add Candidates (Admin)
-  * Select a session and add candidates.
-  * Candidates can only be added before the session starts.
-    
-### 4. Cast Votes (User)
-  * Users can view active voting sessions on the Voting Page and cast their votes.
-  * Each user can vote only once per session.
-    
-### 5. View Results (All Users)
-  * Completed voting sessions are visible on the Results Page, showing the winner or indicating a tie.
-
----
-
-## Smart Contract Overview
-The smart contract includes the following functionalities:
-
-* Voting Session Management:
-  * Create sessions with start and end times.
-  * Restrict actions to session creators.
-
-* Voting:
-  * Prevent duplicate voting.
-  * Support transparent result calculations.
-
-* Result Retrieval:
-  * Identify the winner or determine a tie.
-
-The contract is written in Solidity and uses OpenZeppelin libraries for security.
-
----
-
-## Testing
-### Run Unit Tests
-Run tests to ensure the functionality of the smart contract:
 ```sh
 npm test
 ```
-Sample test cases include:
-* Creating voting sessions.
-* Adding candidates.
-* Voting during valid periods.
-* Retrieving results.
 
-### Coverage
-Generate a coverage report:
+5. Start the dev server:
+
 ```sh
-npm run coverage
+npm start --prefix frontend
+# → http://localhost:5173
 ```
----
 
-### License
-This project is licensed under the MIT License. See the [LICENSE](https://github.com/hedigardi/voting-dapp/blob/main/LICENSE.md) file for details.
+Other frontend scripts:
+
+```sh
+npm run preview --prefix frontend   # preview production build locally
+npm run lint --prefix frontend       # ESLint
+```
+
+## Deploy Contract (Ignition)
+
+Deploy to Optimism Sepolia:
+
+```sh
+npx hardhat ignition deploy ignition/modules/VotingContract.ts --network optimismSepolia --verify
+```
+
+After a new deployment, update `VITE_CONTRACT_ADDRESS` in your environment or `frontend/.env.production` and re-run `npm run compile` to sync the ABI.
+
+## Frontend Environment Variables
+
+Create `frontend/.env.production` (or set the same keys in the Netlify UI):
+
+```sh
+VITE_CONTRACT_ADDRESS=0x...
+VITE_CHAIN_ID_HEX=0xaa37dc
+VITE_CHAIN_NAME=Optimism Sepolia
+VITE_CHAIN_RPC_URL=https://sepolia.optimism.io
+VITE_CHAIN_EXPLORER_URL=https://sepolia-optimism.etherscan.io
+VITE_PASSPORT_DECODER_ADDRESS=0xe53C60F8069C2f0c3a84F9B3DB5cf56f3100ba56
+```
+
+All variables are optional — the defaults above are used as fallbacks. A reference file is available at `frontend/.env.example`.
+
+The ABI is auto-synced from Hardhat artifacts on every `npm run compile` and `npm run build` via `scripts/sync-frontend-abi.js`.
+
+## Netlify Deployment
+
+The repo root contains a `netlify.toml` that configures the full build for Netlify:
+
+- **Build command:** `npm ci --prefix frontend ; npm run compile ; npm run build --prefix frontend`
+- **Publish directory:** `frontend/dist`
+- **SPA redirect:** all routes fall back to `index.html` (configured in `netlify.toml`)
+
+No manual Netlify settings are needed when deploying from the repo root; set environment variables in the Netlify UI if you want to override the defaults.
+
+## Quality Checks
+
+```sh
+npm run lint
+npm run build --prefix frontend
+```
+
+## License
+
+MIT. See `LICENSE.md`.

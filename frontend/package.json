@@ -7,48 +7,27 @@
   "license": "MIT",
   "dependencies": {
     "@popperjs/core": "^2.11.8",
-    "@testing-library/jest-dom": "^5.17.0",
-    "@testing-library/react": "^13.4.0",
-    "@testing-library/user-event": "^13.5.0",
     "bootstrap": "^5.3.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
-    "react-scripts": "5.0.1",
-    "web-vitals": "^2.1.4",
+    "voting-dapp": "file:..",
     "web3": "^4.15.0"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "start:prod": "serve -s build -l 3000",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject",
+    "start": "vite",
+    "start:prod": "serve -s dist -l 3000",
+    "build": "npm run sync:abi --prefix .. && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
     "lint": "eslint src --ext .js,.jsx,.ts,.tsx",
     "format": "prettier --write ."
   },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
-  },
   "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
     "eslint": "^8.49.0",
     "eslint-plugin-react": "^7.33.1",
     "prettier": "^3.0.2",
-    "serve": "^14.2.6"
+    "serve": "^14.2.6",
+    "vite": "^5.4.8"
   }
 }

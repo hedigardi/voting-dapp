@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "../hooks/useWallet";
 import {
   assertCanSendTransaction,
   cacheVotedCandidate,
   clearPendingVotedCandidate,
   getContract,
+  getReadOnlyContract,
   getCachedVotedCandidate,
   getPendingVotedCandidate,
   getRecommendedSendOptions,
@@ -145,7 +146,7 @@ const VotingPage = () => {
           setLoadingContext("sessions");
           setLoading(true);
         }
-        const contract = getContract();
+        const contract = getReadOnlyContract();
         const sessionCount = Number(
           await contract.methods.sessionCount().call(),
         );
