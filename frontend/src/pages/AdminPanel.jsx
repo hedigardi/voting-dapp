@@ -1,8 +1,15 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useWallet } from "../hooks/useWallet";
 import {
+  assertCanSendTransaction,
   getContract,
+  getRecommendedSendOptions,
+  isReplacementUnderpricedError,
+  parseWeb3ErrorMessage,
   SEPOLIA_CHAIN_ID_HEX,
+  CHAIN_NAME,
+  sortSessionsByRecency,
+  switchToSupportedNetwork,
   shortenAddress,
 } from "../utils/web3";
 
@@ -56,6 +63,7 @@ const AdminPanel = () => {
   const [title, setTitle] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
+  const [requiresPassport, setRequiresPassport] = useState(false);
   const [sessions, setSessions] = useState([]);
   const [candidatesBySession, setCandidatesBySession] = useState({});
   const [selectedSessionId, setSelectedSessionId] = useState("");
@@ -64,15 +72,25 @@ const AdminPanel = () => {
   const [successMessage, setSuccessMessage] = useState("");
   const [feedbackTarget, setFeedbackTarget] = useState("global");
   const [loading, setLoading] = useState(false);
-  const [latestSharedSessionId, setLatestSharedSessionId] = useState(null);
+  const [pendingAction, setPendingAction] = useState(null);
   const [copiedSessionId, setCopiedSessionId] = useState(null);
   const {
     walletConnected,
     account,
+    chainId,
+    hasResolvedChainId,
     walletError,
     isWrongNetwork,
     connectWallet,
   } = useWallet();
+
+  const handleNetworkSwitch = async () => {
+    try {
+      await switchToSupportedNetwork();
+    } catch (err) {
+      handleError(err.message || `Failed to switch to ${CHAIN_NAME}.`);
+    }
+  };
 
   const handleError = (message, target = "global") => {
     setSuccessMessage("");
@@ -121,6 +139,53 @@ const AdminPanel = () => {
     }
   };
 
+  const sendWithPendingRetry = async (method, target, meta = {}) => {
+    const sendOnce = async (bump = false) =>
+      new Promise((resolve, reject) => {
+        let promiEvent;
+
+        const onHash = (hash) => {
+          setErrorMessage("");
+          setFeedbackTarget(target);
+          setPendingAction({
+            target,
+            txHash: hash,
+            ...meta,
+          });
+        };
+
+        const onReceipt = (receipt) => {
+          resolve(receipt);
+        };
+
+        const onError = (error) => {
+          reject(error);
+        };
+
+        (async () => {
+          try {
+            const sendOptions = await getRecommendedSendOptions(account, bump);
+            promiEvent = method.send(sendOptions);
+            promiEvent.on("transactionHash", onHash);
+            promiEvent.on("receipt", onReceipt);
+            promiEvent.on("error", onError);
+          } catch (setupErr) {
+            reject(setupErr);
+          }
+        })();
+      });
+
+    try {
+      return await sendOnce(false);
+    } catch (sendErr) {
+      if (!isReplacementUnderpricedError(sendErr)) {
+        throw sendErr;
+      }
+
+      return sendOnce(true);
+    }
+  };
+
   const fetchCandidates = useCallback(async (sessionId) => {
     try {
       const contract = getContract();
@@ -142,54 +207,54 @@ const AdminPanel = () => {
     try {
       setLoading(true);
       const contract = getContract();
-      const sessionCount = await contract.methods.sessionCount().call();
+      const sessionCount = Number(await contract.methods.sessionCount().call());
       const currentTime = Math.floor(Date.now() / 1000);
       const fetchedSessions = [];
 
       for (let i = 0; i < sessionCount; i++) {
-        const session = await contract.methods.votingSessions(i).call();
-        const creator = await contract.methods.getSessionCreator(i).call();
-        const candidates = await contract.methods.getCandidates(i).call();
-        const status = deriveSessionStatus({
-          session,
-          currentTime,
-          candidateCount: candidates.length,
-        });
+        try {
+          const session = await contract.methods.votingSessions(i).call();
+          const candidates = await contract.methods.getCandidates(i).call();
+          const status = deriveSessionStatus({
+            session,
+            currentTime,
+            candidateCount: candidates.length,
+          });
 
-        let winner = "";
-        let isTie = false;
+          let winner = "";
+          let isTie = false;
 
-        if (status === "Completed" && candidates.length > 0) {
-          try {
-            const result = await contract.methods.getWinner(i).call();
-            winner = result[0];
-            isTie = result[1];
-          } catch (error) {
-            console.error(
-              `Error fetching winner for session ${i}:`,
-              error.message,
-            );
+          if (status === "Completed" && candidates.length > 0) {
+            try {
+              const result = await contract.methods.getWinner(i).call();
+              winner = result[0];
+              isTie = result[1];
+            } catch (error) {
+              console.error(
+                `Error fetching winner for session ${i}:`,
+                error.message,
+              );
+            }
           }
-        }
 
-        fetchedSessions.push({
-          id: Number(session.id),
-          title: session.title,
-          startTime: Number(session.startTime),
-          endTime: Number(session.endTime),
-          status,
-          creator,
-          winner: candidates.length > 0 ? winner : "No candidates",
-          isTie: candidates.length > 0 && isTie,
-        });
+          fetchedSessions.push({
+            id: Number(session.id),
+            title: session.title,
+            startTime: Number(session.startTime),
+            endTime: Number(session.endTime),
+            status,
+            creator: session.creator,
+            requiresPassport: session.requiresPassport,
+            winner: candidates.length > 0 ? winner : "No candidates",
+            isTie: candidates.length > 0 && isTie,
+          });
+        } catch (sessionErr) {
+          // Skip a malformed/unreadable session entry rather than failing the entire list.
+          console.error(`Error fetching session ${i}:`, sessionErr);
+        }
       }
 
-      fetchedSessions.sort(
-        (a, b) =>
-          b.endTime - a.endTime || b.startTime - a.startTime || b.id - a.id,
-      );
-
-      setSessions(fetchedSessions);
+      setSessions(sortSessionsByRecency(fetchedSessions));
       await Promise.all(
         fetchedSessions.map((session) => fetchCandidates(session.id)),
       );
@@ -216,24 +281,43 @@ const AdminPanel = () => {
         throw new Error("Start time must be before end time.");
       }
 
+      await assertCanSendTransaction(account);
+
       const contract = getContract();
       const nextSessionId = Number(
         await contract.methods.sessionCount().call(),
       );
-      await contract.methods
-        .createVotingSession(title, startTimeUnix, endTimeUnix)
-        .send({ from: account });
+      let receipt;
+      const method = contract.methods.createVotingSession(
+        title,
+        startTimeUnix,
+        endTimeUnix,
+        requiresPassport,
+      );
+      receipt = await sendWithPendingRetry(method, "create");
+
+      const createdSessionId = Number(
+        receipt?.events?.VotingSessionCreated?.returnValues?.sessionId ??
+          nextSessionId,
+      );
 
       setTitle("");
       setStartTime("");
       setEndTime("");
+      setRequiresPassport(false);
 
       await fetchSessions();
-      setLatestSharedSessionId(nextSessionId);
+      setPendingAction(null);
+      setSelectedSessionId(String(createdSessionId));
       handleSuccess("Voting session created successfully!", "create");
     } catch (err) {
+      setPendingAction(null);
       console.error("Error creating session:", err);
-      handleError("Failed to create session: " + err.message, "create");
+      handleError(
+        "Failed to create session: " +
+          parseWeb3ErrorMessage(err, "Transaction failed."),
+        "create",
+      );
     } finally {
       setLoading(false);
     }
@@ -281,37 +365,65 @@ const AdminPanel = () => {
         );
       }
 
+      await assertCanSendTransaction(account);
+
       const contract = getContract();
-      await contract.methods
-        .addCandidate(sessionId, candidateName)
-        .send({ from: account });
+      const method = contract.methods.addCandidate(sessionId, candidateName);
+      await sendWithPendingRetry(method, "candidate", { sessionId });
 
       setCandidateName("");
       await fetchCandidates(sessionId);
+      await fetchSessions();
+      setPendingAction(null);
       handleSuccess("Candidate added successfully!", "candidate");
     } catch (err) {
+      setPendingAction(null);
       console.error("Error adding candidate:", err);
-      handleError(err.message, "candidate");
+      handleError(
+        parseWeb3ErrorMessage(err, "Failed to add candidate."),
+        "candidate",
+      );
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (!walletConnected || !account || isWrongNetwork) {
+    if (!walletConnected || !account || !hasResolvedChainId || isWrongNetwork) {
       setSessions([]);
       setCandidatesBySession({});
       return;
     }
 
     fetchSessions();
-  }, [walletConnected, account, isWrongNetwork, fetchSessions]);
+  }, [
+    walletConnected,
+    account,
+    hasResolvedChainId,
+    isWrongNetwork,
+    fetchSessions,
+  ]);
 
   useEffect(() => {
     if (walletError) {
       handleError(walletError, "global");
     }
   }, [walletError]);
+
+  useEffect(() => {
+    if (!pendingAction) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (pendingAction.target === "candidate") {
+        fetchCandidates(pendingAction.sessionId);
+      }
+      fetchSessions();
+    }, 8000);
+
+    return () => window.clearInterval(intervalId);
+  }, [pendingAction, fetchCandidates, fetchSessions]);
 
   const managedSessions = sessions.filter(
     (session) => session.creator.toLowerCase() === account.toLowerCase(),
@@ -359,7 +471,13 @@ const AdminPanel = () => {
             <div className="spinner-border text-primary" role="status">
               <span className="visually-hidden">Loading...</span>
             </div>
-            <p>Syncing admin actions with the contract...</p>
+            <p>
+              {pendingAction?.txHash
+                ? `Transaction submitted (${shortenAddress(
+                    pendingAction.txHash,
+                  )}). Waiting for blockchain confirmation...`
+                : "Syncing admin actions with the contract..."}
+            </p>
           </div>
         </div>
       )}
@@ -406,8 +524,17 @@ const AdminPanel = () => {
         <>
           {isWrongNetwork && (
             <div className="alert alert-warning">
-              Switch wallet network to Sepolia ({SEPOLIA_CHAIN_ID_HEX}) to use
-              admin actions.
+              Switch wallet network to {CHAIN_NAME} ({SEPOLIA_CHAIN_ID_HEX}) to
+              use admin actions. Detected network: {chainId || "unknown"}.
+              <div className="mt-2">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={handleNetworkSwitch}
+                >
+                  Switch to {CHAIN_NAME}
+                </button>
+              </div>
             </div>
           )}
 
@@ -491,14 +618,59 @@ const AdminPanel = () => {
                     onChange={(e) => setEndTime(e.target.value)}
                   />
                 </div>
+                <div className="passport-toggle-field">
+                  <div className="form-check">
+                    <input
+                      type="checkbox"
+                      className="form-check-input"
+                      id="requiresPassport"
+                      checked={requiresPassport}
+                      onChange={(e) => setRequiresPassport(e.target.checked)}
+                    />
+                    <label
+                      className="form-check-label"
+                      htmlFor="requiresPassport"
+                    >
+                      Require Gitcoin Passport
+                    </label>
+                  </div>
+                  <p className="passport-toggle-hint">
+                    Voters must have a Gitcoin Passport score of 20+ to vote in
+                    this session.
+                    <a
+                      href="https://passport.xyz"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="passport-toggle-link"
+                    >
+                      Learn more
+                    </a>
+                  </p>
+                </div>
               </div>
               <button
                 className="btn btn-primary app-cta"
                 onClick={createSession}
-                disabled={isWrongNetwork}
+                disabled={isWrongNetwork || pendingAction?.target === "create"}
               >
-                Create session
+                {pendingAction?.target === "create"
+                  ? "Creating session..."
+                  : "Create session"}
               </button>
+              {pendingAction?.target === "create" && (
+                <div className="admin-feedback-inline" aria-live="polite">
+                  <div
+                    className="admin-feedback-toast admin-feedback-toast-success"
+                    role="status"
+                  >
+                    <span className="admin-feedback-label">Pending</span>
+                    <strong className="admin-feedback-message">
+                      Transaction submitted in MetaMask. Waiting for network
+                      confirmation.
+                    </strong>
+                  </div>
+                </div>
+              )}
               {(successMessage || errorMessage) &&
                 feedbackTarget === "create" && (
                   <div className="admin-feedback-inline" aria-live="polite">
@@ -528,39 +700,6 @@ const AdminPanel = () => {
                     )}
                   </div>
                 )}
-
-              {latestSharedSessionId !== null && (
-                <div className="session-share-card" aria-live="polite">
-                  <span className="summary-label">Share this session</span>
-                  <strong className="session-share-link">
-                    {getSessionShareUrl(latestSharedSessionId)}
-                  </strong>
-                  <div className="session-share-actions">
-                    <button
-                      className="btn btn-primary btn-sm"
-                      type="button"
-                      onClick={() => copySessionLink(latestSharedSessionId)}
-                    >
-                      {copiedSessionId === latestSharedSessionId
-                        ? "Copied"
-                        : "Copy link"}
-                    </button>
-                    <a
-                      className="btn btn-primary btn-sm"
-                      href={getSessionShareUrl(latestSharedSessionId)}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open voter view
-                    </a>
-                    {copiedSessionId === latestSharedSessionId && (
-                      <p className="session-copy-feedback" role="status">
-                        Session link copied
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
             </article>
 
             <article className="form-panel">
@@ -612,10 +751,28 @@ const AdminPanel = () => {
               <button
                 className="btn btn-primary app-cta"
                 onClick={addCandidate}
-                disabled={isWrongNetwork}
+                disabled={
+                  isWrongNetwork || pendingAction?.target === "candidate"
+                }
               >
-                Add candidate
+                {pendingAction?.target === "candidate"
+                  ? "Adding candidate..."
+                  : "Add candidate"}
               </button>
+              {pendingAction?.target === "candidate" && (
+                <div className="admin-feedback-inline" aria-live="polite">
+                  <div
+                    className="admin-feedback-toast admin-feedback-toast-success"
+                    role="status"
+                  >
+                    <span className="admin-feedback-label">Pending</span>
+                    <strong className="admin-feedback-message">
+                      Candidate transaction submitted. Waiting for network
+                      confirmation.
+                    </strong>
+                  </div>
+                </div>
+              )}
               {(successMessage || errorMessage) &&
                 feedbackTarget === "candidate" && (
                   <div className="admin-feedback-inline" aria-live="polite">
@@ -667,6 +824,14 @@ const AdminPanel = () => {
                   <div>
                     <p className="session-eyebrow">Session #{session.id + 1}</p>
                     <h3>{session.title}</h3>
+                    {session.requiresPassport && (
+                      <span
+                        className="passport-badge"
+                        title="Requires Gitcoin Passport score ≥ 20"
+                      >
+                        Passport required
+                      </span>
+                    )}
                   </div>
                   <span className={getStatusTone(session.status)}>
                     {session.status}

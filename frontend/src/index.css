@@ -741,6 +741,46 @@ body {
   color: #475569;
 }
 
+/* Gitcoin Passport badge — shown on session cards that require passport */
+.passport-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(124, 58, 237, 0.12);
+  color: #6d28d9;
+  margin-top: 0.3rem;
+}
+
+.passport-badge::before {
+  content: "🔐";
+  font-size: 0.7rem;
+}
+
+/* Passport toggle field in session creation form */
+.passport-toggle-field {
+  padding: 0.85rem 1rem;
+  background: rgba(241, 245, 249, 0.7);
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.passport-toggle-hint {
+  margin: 0.4rem 0 0 1.65rem;
+  font-size: 0.84rem;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.passport-toggle-link {
+  margin-left: 0.3rem;
+  color: #6d28d9;
+  text-decoration: underline;
+}
+
 .inline-note {
   padding: 0.85rem 1rem;
   border-radius: 16px;

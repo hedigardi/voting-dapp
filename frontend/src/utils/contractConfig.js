@@ -1,252 +1,498 @@
 // Exporting the address of the deployed smart contract
 // This address must match the address where the smart contract is deployed
-export const contractAddress = "0xDb15838439056a35e73C9aFDB457Bf46f48E8397";
+export const contractAddress = "0xd8eb00a7c30A5de84732719137529db6e06BdD76";
 
 // Exporting the ABI (Application Binary Interface) of the smart contract
 // The ABI defines the methods, events, and their input/output parameters for interacting with the contract
 export const contractABI = [
-  { inputs: [], stateMutability: "nonpayable", type: "constructor" },
-  {
-    inputs: [{ internalType: "address", name: "owner", type: "address" }],
-    name: "OwnableInvalidOwner",
-    type: "error",
-  },
-  {
-    inputs: [{ internalType: "address", name: "account", type: "address" }],
-    name: "OwnableUnauthorizedAccount",
-    type: "error",
-  },
-  { inputs: [], name: "ReentrancyGuardReentrantCall", type: "error" },
-  {
-    anonymous: false,
-    inputs: [
-      {
-        indexed: true,
-        internalType: "uint256",
-        name: "sessionId",
-        type: "uint256",
-      },
-      {
-        indexed: false,
-        internalType: "string",
-        name: "candidateName",
-        type: "string",
-      },
-    ],
-    name: "CandidateAdded",
-    type: "event",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      {
-        indexed: true,
-        internalType: "address",
-        name: "previousOwner",
-        type: "address",
-      },
-      {
-        indexed: true,
-        internalType: "address",
-        name: "newOwner",
-        type: "address",
-      },
-    ],
-    name: "OwnershipTransferred",
-    type: "event",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      {
-        indexed: true,
-        internalType: "uint256",
-        name: "sessionId",
-        type: "uint256",
-      },
-    ],
-    name: "SessionArchived",
-    type: "event",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      {
-        indexed: true,
-        internalType: "address",
-        name: "voter",
-        type: "address",
-      },
-      {
-        indexed: true,
-        internalType: "uint256",
-        name: "sessionId",
-        type: "uint256",
-      },
-      {
-        indexed: false,
-        internalType: "uint256",
-        name: "candidateId",
-        type: "uint256",
-      },
-    ],
-    name: "VoteCast",
-    type: "event",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      {
-        indexed: true,
-        internalType: "address",
-        name: "creator",
-        type: "address",
-      },
-      {
-        indexed: false,
-        internalType: "uint256",
-        name: "sessionId",
-        type: "uint256",
-      },
-      { indexed: false, internalType: "string", name: "title", type: "string" },
-      {
-        indexed: false,
-        internalType: "uint256",
-        name: "startTime",
-        type: "uint256",
-      },
-      {
-        indexed: false,
-        internalType: "uint256",
-        name: "endTime",
-        type: "uint256",
-      },
-    ],
-    name: "VotingSessionCreated",
-    type: "event",
-  },
-  {
-    inputs: [
-      { internalType: "uint256", name: "sessionId", type: "uint256" },
-      { internalType: "string", name: "name", type: "string" },
-    ],
-    name: "addCandidate",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "uint256", name: "sessionId", type: "uint256" }],
-    name: "archiveSession",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      { internalType: "string", name: "title", type: "string" },
-      { internalType: "uint256", name: "startTime", type: "uint256" },
-      { internalType: "uint256", name: "endTime", type: "uint256" },
-    ],
-    name: "createVotingSession",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "uint256", name: "sessionId", type: "uint256" }],
-    name: "getCandidates",
-    outputs: [
-      {
-        components: [
-          { internalType: "string", name: "name", type: "string" },
-          { internalType: "uint256", name: "voteCount", type: "uint256" },
-        ],
-        internalType: "struct VotingContract.Candidate[]",
-        name: "",
-        type: "tuple[]",
-      },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "uint256", name: "sessionId", type: "uint256" }],
-    name: "getSessionCreator",
-    outputs: [{ internalType: "address", name: "", type: "address" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "uint256", name: "sessionId", type: "uint256" }],
-    name: "getWinner",
-    outputs: [
-      { internalType: "string", name: "winnerName", type: "string" },
-      { internalType: "bool", name: "isTie", type: "bool" },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [
-      { internalType: "uint256", name: "sessionId", type: "uint256" },
-      { internalType: "address", name: "user", type: "address" },
-    ],
-    name: "hasUserVoted",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "owner",
-    outputs: [{ internalType: "address", name: "", type: "address" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "renounceOwnership",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [],
-    name: "sessionCount",
-    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "address", name: "newOwner", type: "address" }],
-    name: "transferOwnership",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [
-      { internalType: "uint256", name: "sessionId", type: "uint256" },
-      { internalType: "uint256", name: "candidateId", type: "uint256" },
-    ],
-    name: "vote",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
-  {
-    inputs: [{ internalType: "uint256", name: "", type: "uint256" }],
-    name: "votingSessions",
-    outputs: [
-      { internalType: "uint256", name: "id", type: "uint256" },
-      { internalType: "string", name: "title", type: "string" },
-      { internalType: "uint256", name: "startTime", type: "uint256" },
-      { internalType: "uint256", name: "endTime", type: "uint256" },
-      { internalType: "bool", name: "isActive", type: "bool" },
-      { internalType: "address", name: "creator", type: "address" },
-    ],
-    stateMutability: "view",
-    type: "function",
-  },
+    {
+        "inputs":  [
+                       {
+                           "internalType":  "address",
+                           "name":  "_passportDecoder",
+                           "type":  "address"
+                       }
+                   ],
+        "stateMutability":  "nonpayable",
+        "type":  "constructor"
+    },
+    {
+        "inputs":  [
+                       {
+                           "internalType":  "address",
+                           "name":  "owner",
+                           "type":  "address"
+                       }
+                   ],
+        "name":  "OwnableInvalidOwner",
+        "type":  "error"
+    },
+    {
+        "inputs":  [
+                       {
+                           "internalType":  "address",
+                           "name":  "account",
+                           "type":  "address"
+                       }
+                   ],
+        "name":  "OwnableUnauthorizedAccount",
+        "type":  "error"
+    },
+    {
+        "inputs":  [
+
+                   ],
+        "name":  "ReentrancyGuardReentrantCall",
+        "type":  "error"
+    },
+    {
+        "anonymous":  false,
+        "inputs":  [
+                       {
+                           "indexed":  true,
+                           "internalType":  "uint256",
+                           "name":  "sessionId",
+                           "type":  "uint256"
+                       },
+                       {
+                           "indexed":  false,
+                           "internalType":  "string",
+                           "name":  "candidateName",
+                           "type":  "string"
+                       }
+                   ],
+        "name":  "CandidateAdded",
+        "type":  "event"
+    },
+    {
+        "anonymous":  false,
+        "inputs":  [
+                       {
+                           "indexed":  true,
+                           "internalType":  "address",
+                           "name":  "previousOwner",
+                           "type":  "address"
+                       },
+                       {
+                           "indexed":  true,
+                           "internalType":  "address",
+                           "name":  "newOwner",
+                           "type":  "address"
+                       }
+                   ],
+        "name":  "OwnershipTransferred",
+        "type":  "event"
+    },
+    {
+        "anonymous":  false,
+        "inputs":  [
+                       {
+                           "indexed":  true,
+                           "internalType":  "address",
+                           "name":  "newDecoder",
+                           "type":  "address"
+                       }
+                   ],
+        "name":  "PassportDecoderUpdated",
+        "type":  "event"
+    },
+    {
+        "anonymous":  false,
+        "inputs":  [
+                       {
+                           "indexed":  true,
+                           "internalType":  "uint256",
+                           "name":  "sessionId",
+                           "type":  "uint256"
+                       }
+                   ],
+        "name":  "SessionArchived",
+        "type":  "event"
+    },
+    {
+        "anonymous":  false,
+        "inputs":  [
+                       {
+                           "indexed":  true,
+                           "internalType":  "address",
+                           "name":  "voter",
+                           "type":  "address"
+                       },
+                       {
+                           "indexed":  true,
+                           "internalType":  "uint256",
+                           "name":  "sessionId",
+                           "type":  "uint256"
+                       },
+                       {
+                           "indexed":  false,
+                           "internalType":  "uint256",
+                           "name":  "candidateId",
+                           "type":  "uint256"
+                       }
+                   ],
+        "name":  "VoteCast",
+        "type":  "event"
+    },
+    {
+        "anonymous":  false,
+        "inputs":  [
+                       {
+                           "indexed":  true,
+                           "internalType":  "address",
+                           "name":  "creator",
+                           "type":  "address"
+                       },
+                       {
+                           "indexed":  false,
+                           "internalType":  "uint256",
+                           "name":  "sessionId",
+                           "type":  "uint256"
+                       },
+                       {
+                           "indexed":  false,
+                           "internalType":  "string",
+                           "name":  "title",
+                           "type":  "string"
+                       },
+                       {
+                           "indexed":  false,
+                           "internalType":  "uint256",
+                           "name":  "startTime",
+                           "type":  "uint256"
+                       },
+                       {
+                           "indexed":  false,
+                           "internalType":  "uint256",
+                           "name":  "endTime",
+                           "type":  "uint256"
+                       },
+                       {
+                           "indexed":  false,
+                           "internalType":  "bool",
+                           "name":  "requiresPassport",
+                           "type":  "bool"
+                       }
+                   ],
+        "name":  "VotingSessionCreated",
+        "type":  "event"
+    },
+    {
+        "inputs":  [
+                       {
+                           "internalType":  "uint256",
+                           "name":  "sessionId",
+                           "type":  "uint256"
+                       },
+                       {
+                           "internalType":  "string",
+                           "name":  "name",
+                           "type":  "string"
+                       }
+                   ],
+        "name":  "addCandidate",
+        "outputs":  [
+
+                    ],
+        "stateMutability":  "nonpayable",
+        "type":  "function"
+    },
+    {
+        "inputs":  [
+                       {
+                           "internalType":  "uint256",
+                           "name":  "sessionId",
+                           "type":  "uint256"
+                       }
+                   ],
+        "name":  "archiveSession",
+        "outputs":  [
+
+                    ],
+        "stateMutability":  "nonpayable",
+        "type":  "function"
+    },
+    {
+        "inputs":  [
+                       {
+                           "internalType":  "string",
+                           "name":  "title",
+                           "type":  "string"
+                       },
+                       {
+                           "internalType":  "uint256",
+                           "name":  "startTime",
+                           "type":  "uint256"
+                       },
+                       {
+                           "internalType":  "uint256",
+                           "name":  "endTime",
+                           "type":  "uint256"
+                       },
+                       {
+                           "internalType":  "bool",
+                           "name":  "requiresPassport",
+                           "type":  "bool"
+                       }
+                   ],
+        "name":  "createVotingSession",
+        "outputs":  [
+
+                    ],
+        "stateMutability":  "nonpayable",
+        "type":  "function"
+    },
+    {
+        "inputs":  [
+                       {
+                           "internalType":  "uint256",
+                           "name":  "sessionId",
+                           "type":  "uint256"
+                       }
+                   ],
+        "name":  "getCandidates",
+        "outputs":  [
+                        {
+                            "components":  [
+                                               {
+                                                   "internalType":  "string",
+                                                   "name":  "name",
+                                                   "type":  "string"
+                                               },
+                                               {
+                                                   "internalType":  "uint256",
+                                                   "name":  "voteCount",
+                                                   "type":  "uint256"
+                                               }
+                                           ],
+                            "internalType":  "struct VotingContract.Candidate[]",
+                            "name":  "",
+                            "type":  "tuple[]"
+                        }
+                    ],
+        "stateMutability":  "view",
+        "type":  "function"
+    },
+    {
+        "inputs":  [
+                       {
+                           "internalType":  "uint256",
+                           "name":  "sessionId",
+                           "type":  "uint256"
+                       }
+                   ],
+        "name":  "getSessionCreator",
+        "outputs":  [
+                        {
+                            "internalType":  "address",
+                            "name":  "",
+                            "type":  "address"
+                        }
+                    ],
+        "stateMutability":  "view",
+        "type":  "function"
+    },
+    {
+        "inputs":  [
+                       {
+                           "internalType":  "uint256",
+                           "name":  "sessionId",
+                           "type":  "uint256"
+                       }
+                   ],
+        "name":  "getWinner",
+        "outputs":  [
+                        {
+                            "internalType":  "string",
+                            "name":  "winnerName",
+                            "type":  "string"
+                        },
+                        {
+                            "internalType":  "bool",
+                            "name":  "isTie",
+                            "type":  "bool"
+                        }
+                    ],
+        "stateMutability":  "view",
+        "type":  "function"
+    },
+    {
+        "inputs":  [
+                       {
+                           "internalType":  "uint256",
+                           "name":  "sessionId",
+                           "type":  "uint256"
+                       },
+                       {
+                           "internalType":  "address",
+                           "name":  "user",
+                           "type":  "address"
+                       }
+                   ],
+        "name":  "hasUserVoted",
+        "outputs":  [
+                        {
+                            "internalType":  "bool",
+                            "name":  "",
+                            "type":  "bool"
+                        }
+                    ],
+        "stateMutability":  "view",
+        "type":  "function"
+    },
+    {
+        "inputs":  [
+
+                   ],
+        "name":  "owner",
+        "outputs":  [
+                        {
+                            "internalType":  "address",
+                            "name":  "",
+                            "type":  "address"
+                        }
+                    ],
+        "stateMutability":  "view",
+        "type":  "function"
+    },
+    {
+        "inputs":  [
+
+                   ],
+        "name":  "passportDecoder",
+        "outputs":  [
+                        {
+                            "internalType":  "contract IGitcoinPassportDecoder",
+                            "name":  "",
+                            "type":  "address"
+                        }
+                    ],
+        "stateMutability":  "view",
+        "type":  "function"
+    },
+    {
+        "inputs":  [
+
+                   ],
+        "name":  "renounceOwnership",
+        "outputs":  [
+
+                    ],
+        "stateMutability":  "nonpayable",
+        "type":  "function"
+    },
+    {
+        "inputs":  [
+
+                   ],
+        "name":  "sessionCount",
+        "outputs":  [
+                        {
+                            "internalType":  "uint256",
+                            "name":  "",
+                            "type":  "uint256"
+                        }
+                    ],
+        "stateMutability":  "view",
+        "type":  "function"
+    },
+    {
+        "inputs":  [
+                       {
+                           "internalType":  "address",
+                           "name":  "_decoder",
+                           "type":  "address"
+                       }
+                   ],
+        "name":  "setPassportDecoder",
+        "outputs":  [
+
+                    ],
+        "stateMutability":  "nonpayable",
+        "type":  "function"
+    },
+    {
+        "inputs":  [
+                       {
+                           "internalType":  "address",
+                           "name":  "newOwner",
+                           "type":  "address"
+                       }
+                   ],
+        "name":  "transferOwnership",
+        "outputs":  [
+
+                    ],
+        "stateMutability":  "nonpayable",
+        "type":  "function"
+    },
+    {
+        "inputs":  [
+                       {
+                           "internalType":  "uint256",
+                           "name":  "sessionId",
+                           "type":  "uint256"
+                       },
+                       {
+                           "internalType":  "uint256",
+                           "name":  "candidateId",
+                           "type":  "uint256"
+                       }
+                   ],
+        "name":  "vote",
+        "outputs":  [
+
+                    ],
+        "stateMutability":  "nonpayable",
+        "type":  "function"
+    },
+    {
+        "inputs":  [
+                       {
+                           "internalType":  "uint256",
+                           "name":  "",
+                           "type":  "uint256"
+                       }
+                   ],
+        "name":  "votingSessions",
+        "outputs":  [
+                        {
+                            "internalType":  "uint256",
+                            "name":  "id",
+                            "type":  "uint256"
+                        },
+                        {
+                            "internalType":  "string",
+                            "name":  "title",
+                            "type":  "string"
+                        },
+                        {
+                            "internalType":  "uint256",
+                            "name":  "startTime",
+                            "type":  "uint256"
+                        },
+                        {
+                            "internalType":  "uint256",
+                            "name":  "endTime",
+                            "type":  "uint256"
+                        },
+                        {
+                            "internalType":  "bool",
+                            "name":  "isActive",
+                            "type":  "bool"
+                        },
+                        {
+                            "internalType":  "address",
+                            "name":  "creator",
+                            "type":  "address"
+                        },
+                        {
+                            "internalType":  "bool",
+                            "name":  "requiresPassport",
+                            "type":  "bool"
+                        }
+                    ],
+        "stateMutability":  "view",
+        "type":  "function"
+    }
 ];

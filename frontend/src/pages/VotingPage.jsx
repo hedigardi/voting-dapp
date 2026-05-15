@@ -1,6 +1,23 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useWallet } from "../hooks/useWallet";
-import { getContract, SEPOLIA_CHAIN_ID_HEX } from "../utils/web3";
+import {
+  assertCanSendTransaction,
+  cacheVotedCandidate,
+  clearPendingVotedCandidate,
+  getContract,
+  getCachedVotedCandidate,
+  getPendingVotedCandidate,
+  getRecommendedSendOptions,
+  isReplacementUnderpricedError,
+  resolveVotedCandidateFromEvents,
+  SEPOLIA_CHAIN_ID_HEX,
+  setPendingVotedCandidate,
+  sortSessionsByRecency,
+  CHAIN_NAME,
+  checkPassportIsHuman,
+  parseWeb3ErrorMessage,
+  switchToSupportedNetwork,
+} from "../utils/web3";
 
 const formatTimestamp = (timestamp) => {
   const date = new Date(timestamp * 1000);
@@ -19,7 +36,19 @@ const formatTimestamp = (timestamp) => {
   return `${dateStr}\n${timeStr}`;
 };
 
-const getVotedCandidatesBySession = async (contract, account) => {
+const getVotedCandidatesBySession = async (
+  contract,
+  account,
+  sessionIds = [],
+) => {
+  const fallback = {};
+  sessionIds.forEach((sessionId) => {
+    const cachedCandidateId = getCachedVotedCandidate(sessionId, account);
+    if (cachedCandidateId !== null) {
+      fallback[Number(sessionId)] = cachedCandidateId;
+    }
+  });
+
   try {
     const voteEvents = await contract.getPastEvents("VoteCast", {
       filter: { voter: account },
@@ -27,15 +56,19 @@ const getVotedCandidatesBySession = async (contract, account) => {
       toBlock: "latest",
     });
 
-    return voteEvents.reduce((acc, event) => {
-      const sessionId = Number(event.returnValues.sessionId);
-      const candidateId = Number(event.returnValues.candidateId);
-      acc[sessionId] = candidateId;
-      return acc;
-    }, {});
+    return voteEvents.reduce(
+      (acc, event) => {
+        const sessionId = Number(event.returnValues.sessionId);
+        const candidateId = Number(event.returnValues.candidateId);
+        cacheVotedCandidate(sessionId, account, candidateId);
+        acc[sessionId] = candidateId;
+        return acc;
+      },
+      { ...fallback },
+    );
   } catch (err) {
     console.error("Failed to resolve voted candidates from events:", err);
-    return {};
+    return fallback;
   }
 };
 
@@ -75,10 +108,20 @@ const VotingPage = () => {
   const {
     walletConnected,
     account,
+    chainId,
+    hasResolvedChainId,
     walletError,
     isWrongNetwork,
     connectWallet,
   } = useWallet();
+
+  const handleNetworkSwitch = async () => {
+    try {
+      await switchToSupportedNetwork();
+    } catch (err) {
+      handleError(err.message || `Failed to switch to ${CHAIN_NAME}.`);
+    }
+  };
 
   /**
    * Connects the user's wallet using MetaMask and fetches voting sessions.
@@ -87,12 +130,16 @@ const VotingPage = () => {
     try {
       setLoading(true);
       const contract = getContract();
+      const sessionCount = Number(await contract.methods.sessionCount().call());
+      const sessionIds = Array.from(
+        { length: sessionCount },
+        (_, index) => index,
+      );
       const votedCandidatesBySession = await getVotedCandidatesBySession(
         contract,
         account,
+        sessionIds,
       );
-
-      const sessionCount = await contract.methods.sessionCount().call();
 
       const currentTime = Math.floor(Date.now() / 1000);
       const fetchedSessions = [];
@@ -101,6 +148,28 @@ const VotingPage = () => {
         const session = await contract.methods.votingSessions(i).call();
         const candidates = await contract.methods.getCandidates(i).call();
         const hasVoted = await contract.methods.hasUserVoted(i, account).call();
+        const fallbackCandidateId = getCachedVotedCandidate(i, account);
+        const pendingCandidateId = getPendingVotedCandidate(i, account);
+        let resolvedCandidateId =
+          votedCandidatesBySession[Number(session.id)] ??
+          (hasVoted ? fallbackCandidateId : pendingCandidateId);
+
+        if (hasVoted && resolvedCandidateId === null) {
+          const onDemandCandidateId = await resolveVotedCandidateFromEvents(
+            contract,
+            account,
+            i,
+          );
+          if (onDemandCandidateId !== null) {
+            resolvedCandidateId = onDemandCandidateId;
+            cacheVotedCandidate(i, account, onDemandCandidateId);
+          }
+        }
+
+        if (hasVoted) {
+          clearPendingVotedCandidate(i, account);
+        }
+
         const status = deriveSessionStatus({
           session,
           currentTime,
@@ -113,7 +182,9 @@ const VotingPage = () => {
           endTime: Number(session.endTime),
           status,
           hasVoted,
-          votedCandidateId: votedCandidatesBySession[Number(session.id)],
+          votedCandidateId: resolvedCandidateId,
+          isVotePending: !hasVoted && resolvedCandidateId !== null,
+          requiresPassport: session.requiresPassport,
           candidates: candidates.map((candidate, index) => ({
             id: index,
             name: candidate.name,
@@ -130,13 +201,7 @@ const VotingPage = () => {
           session.status === "Not Ready",
       );
 
-      // Sort sessions by their status
-      filteredSessions.sort((a, b) => {
-        const statusOrder = { Active: 1, "Not Ready": 2, "Not Started": 3 };
-        return statusOrder[a.status] - statusOrder[b.status];
-      });
-
-      setSessions(filteredSessions); // Update state with fetched sessions
+      setSessions(sortSessionsByRecency(filteredSessions)); // Update state with fetched sessions
     } catch (err) {
       handleError("Failed to fetch sessions: " + err.message);
     } finally {
@@ -159,24 +224,77 @@ const VotingPage = () => {
       const contract = getContract();
       console.log("Contract instance retrieved.");
 
+      // Pre-check Gitcoin Passport if the session requires it
+      const session = sessions.find((s) => s.id === sessionId);
+      if (session?.requiresPassport) {
+        const isHuman = await checkPassportIsHuman(account);
+        if (!isHuman) {
+          handleSessionError(
+            sessionId,
+            "This session requires a Gitcoin Passport score of 20 or higher. Visit passport.xyz to verify your identity.",
+          );
+          return;
+        }
+      }
+
+      await assertCanSendTransaction(account);
+
+      // Preflight the call to surface a clear revert reason before sending tx.
       await contract.methods
         .vote(sessionId, candidateId)
-        .send({ from: account })
-        .on("transactionHash", (hash) => {
-          console.log(`Transaction hash: ${hash}`);
-        })
-        .on("receipt", (receipt) => {
-          console.log("Transaction receipt:", receipt);
-        })
-        .on("error", (error) => {
-          console.error("Transaction error:", error);
-        });
+        .call({ from: account });
 
+      const method = contract.methods.vote(sessionId, candidateId);
+      setPendingVotedCandidate(sessionId, account, candidateId);
+      setSessions((prev) =>
+        prev.map((entry) =>
+          entry.id === sessionId
+            ? {
+                ...entry,
+                votedCandidateId: candidateId,
+                isVotePending: true,
+              }
+            : entry,
+        ),
+      );
+
+      try {
+        const sendOptions = await getRecommendedSendOptions(account);
+        await method
+          .send(sendOptions)
+          .on("transactionHash", (hash) => {
+            console.log(`Transaction hash: ${hash}`);
+          })
+          .on("receipt", (receipt) => {
+            console.log("Transaction receipt:", receipt);
+          })
+          .on("error", (error) => {
+            console.error("Transaction error:", error);
+          });
+      } catch (sendErr) {
+        if (!isReplacementUnderpricedError(sendErr)) {
+          throw sendErr;
+        }
+
+        const bumpedOptions = await getRecommendedSendOptions(account, true);
+        await method.send(bumpedOptions);
+      }
+
+      clearPendingVotedCandidate(sessionId, account);
+      cacheVotedCandidate(sessionId, account, candidateId);
       console.log("Vote transaction sent successfully.");
       await fetchSessions(); // Refresh sessions after voting
     } catch (err) {
+      clearPendingVotedCandidate(sessionId, account);
       console.error("Failed to vote:", err);
-      handleSessionError(sessionId, "Failed to vote: " + err.message);
+      handleSessionError(
+        sessionId,
+        "Failed to vote: " +
+          parseWeb3ErrorMessage(
+            err,
+            "Vote transaction failed. Please verify wallet network, gas balance, and Passport eligibility.",
+          ),
+      );
     } finally {
       setLoading(false);
     }
@@ -210,13 +328,19 @@ const VotingPage = () => {
    * Effect hook to connect the wallet and fetch sessions on component mount.
    */
   useEffect(() => {
-    if (!walletConnected || !account || isWrongNetwork) {
+    if (!walletConnected || !account || !hasResolvedChainId || isWrongNetwork) {
       setSessions([]);
       return;
     }
 
     fetchSessions();
-  }, [walletConnected, account, isWrongNetwork, fetchSessions]);
+  }, [
+    walletConnected,
+    account,
+    hasResolvedChainId,
+    isWrongNetwork,
+    fetchSessions,
+  ]);
 
   useEffect(() => {
     if (walletError) {
@@ -250,6 +374,19 @@ const VotingPage = () => {
       });
     });
   }, [sessions]);
+
+  useEffect(() => {
+    const hasPendingVotes = sessions.some((session) => session.isVotePending);
+    if (!hasPendingVotes) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      fetchSessions();
+    }, 8000);
+
+    return () => window.clearInterval(intervalId);
+  }, [sessions, fetchSessions]);
 
   const activeSessions = sessions.filter(
     (session) => session.status === "Active",
@@ -312,7 +449,7 @@ const VotingPage = () => {
               contract. Once connected, you can vote without leaving this view.
             </p>
             <div className="feature-row">
-              <span className="feature-chip">Sepolia-ready</span>
+              <span className="feature-chip">Optimism Sepolia</span>
               <span className="feature-chip">Transparent history</span>
               <span className="feature-chip">One vote per session</span>
             </div>
@@ -340,7 +477,7 @@ const VotingPage = () => {
               Connect Wallet
             </button>
             <p className="connect-panel-note">
-              Your wallet should be on Ethereum Sepolia before voting.
+              Your wallet should be on {CHAIN_NAME} before voting.
             </p>
           </div>
         </section>
@@ -350,7 +487,17 @@ const VotingPage = () => {
 
           {isWrongNetwork && (
             <div className="alert alert-warning">
-              Switch wallet network to Sepolia ({SEPOLIA_CHAIN_ID_HEX}) to vote.
+              Switch wallet network to {CHAIN_NAME} ({SEPOLIA_CHAIN_ID_HEX}) to
+              vote. Detected network: {chainId || "unknown"}.
+              <div className="mt-2">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={handleNetworkSwitch}
+                >
+                  Switch to {CHAIN_NAME}
+                </button>
+              </div>
             </div>
           )}
 
@@ -364,6 +511,14 @@ const VotingPage = () => {
                         Session #{session.id + 1}
                       </p>
                       <h3>{session.title}</h3>
+                      {session.requiresPassport && (
+                        <span
+                          className="passport-badge"
+                          title="Requires Gitcoin Passport score ≥ 20"
+                        >
+                          Passport required
+                        </span>
+                      )}
                     </div>
                     <span className={getStatusTone(session.status)}>
                       {session.status}
@@ -385,13 +540,15 @@ const VotingPage = () => {
                     </div>
                   </div>
 
-                  {session.hasVoted && (
+                  {(session.hasVoted || session.isVotePending) && (
                     <div className="vote-confirmation" role="status">
                       <span className="vote-confirmation-label">
-                        Vote confirmed
+                        {session.hasVoted ? "Vote confirmed" : "Vote submitted"}
                       </span>
                       <strong className="vote-confirmation-text">
-                        Your vote has already been recorded for this session.
+                        {session.hasVoted
+                          ? "Your vote has already been recorded for this session."
+                          : "Waiting for blockchain confirmation. This may take a short while."}
                       </strong>
                     </div>
                   )}
@@ -400,7 +557,7 @@ const VotingPage = () => {
                     {session.candidates.map((candidate) => (
                       <div
                         className={`candidate-row ${
-                          session.hasVoted &&
+                          (session.hasVoted || session.isVotePending) &&
                           candidate.id === session.votedCandidateId
                             ? "candidate-row-voted"
                             : ""
@@ -410,7 +567,7 @@ const VotingPage = () => {
                         <div>
                           <strong>{candidate.name}</strong>
                         </div>
-                        {session.hasVoted ? (
+                        {session.hasVoted || session.isVotePending ? (
                           candidate.id === session.votedCandidateId ? (
                             <span
                               className="candidate-choice-badge"
@@ -436,7 +593,7 @@ const VotingPage = () => {
                             onClick={() =>
                               voteForCandidate(session.id, candidate.id)
                             }
-                            disabled={isWrongNetwork}
+                            disabled={isWrongNetwork || session.isVotePending}
                           >
                             Vote now
                           </button>

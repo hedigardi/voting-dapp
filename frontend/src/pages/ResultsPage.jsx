@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useWallet } from "../hooks/useWallet";
-import { getContract, SEPOLIA_CHAIN_ID_HEX } from "../utils/web3";
+import {
+  getContract,
+  SEPOLIA_CHAIN_ID_HEX,
+  CHAIN_NAME,
+  sortSessionsByRecency,
+  switchToSupportedNetwork,
+} from "../utils/web3";
 
 const formatTimestamp = (timestamp) => {
   const date = new Date(timestamp * 1000);
@@ -60,10 +66,20 @@ const ResultsPage = () => {
   const {
     walletConnected,
     account,
+    chainId,
+    hasResolvedChainId,
     walletError,
     isWrongNetwork,
     connectWallet,
   } = useWallet();
+
+  const handleNetworkSwitch = async () => {
+    try {
+      await switchToSupportedNetwork();
+    } catch (err) {
+      setError(err.message || `Failed to switch to ${CHAIN_NAME}.`);
+    }
+  };
 
   /**
    * Fetches voting results for all sessions from the smart contract.
@@ -121,13 +137,7 @@ const ResultsPage = () => {
         });
       }
 
-      // Sort sessions by recency: newest first, oldest last.
-      fetchedSessions.sort(
-        (a, b) =>
-          b.endTime - a.endTime || b.startTime - a.startTime || b.id - a.id,
-      );
-
-      setSessions(fetchedSessions); // Update state with fetched sessions
+      setSessions(sortSessionsByRecency(fetchedSessions)); // Update state with fetched sessions
     } catch (err) {
       console.error("Error fetching results:", err);
       setError("Failed to fetch results: " + err.message);
@@ -137,13 +147,19 @@ const ResultsPage = () => {
   }, []);
 
   useEffect(() => {
-    if (!walletConnected || !account || isWrongNetwork) {
+    if (!walletConnected || !account || !hasResolvedChainId || isWrongNetwork) {
       setSessions([]);
       return;
     }
 
     fetchResults();
-  }, [walletConnected, account, isWrongNetwork, fetchResults]);
+  }, [
+    walletConnected,
+    account,
+    hasResolvedChainId,
+    isWrongNetwork,
+    fetchResults,
+  ]);
 
   useEffect(() => {
     if (walletError) {
@@ -243,8 +259,17 @@ const ResultsPage = () => {
 
           {isWrongNetwork && (
             <div className="alert alert-warning">
-              Switch wallet network to Sepolia ({SEPOLIA_CHAIN_ID_HEX}) to view
-              accurate results.
+              Switch wallet network to {CHAIN_NAME} ({SEPOLIA_CHAIN_ID_HEX}) to
+              view accurate results. Detected network: {chainId || "unknown"}.
+              <div className="mt-2">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={handleNetworkSwitch}
+                >
+                  Switch to {CHAIN_NAME}
+                </button>
+              </div>
             </div>
           )}
 
