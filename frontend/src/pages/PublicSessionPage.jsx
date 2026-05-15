@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import useDocumentTitle from "../hooks/useDocumentTitle";
 import { useWallet } from "../hooks/useWallet";
 import {
   assertCanSendTransaction,
@@ -66,6 +67,7 @@ const getStatusTone = (status) => {
 
 const PublicSessionPage = () => {
   const { sessionId } = useParams();
+  useDocumentTitle(`Session #${Number(sessionId) + 1}`);
   const [session, setSession] = useState(null);
   const [error, setError] = useState("");
   const [sessionError, setSessionError] = useState("");

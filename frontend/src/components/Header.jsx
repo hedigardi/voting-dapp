@@ -58,14 +58,15 @@ const Header = () => {
     <nav className="navbar navbar-expand-lg app-navbar">
       <div className="container-fluid">
         <Link
-          className="navbar-brand app-brand"
+          className="navbar-brand app-brand d-flex align-items-center gap-2"
           to={isPublicSessionRoute ? location.pathname : "/"}
         >
-          <span className="app-brand-mark">VD</span>
-          <span>
-            <strong>Voting DApp</strong>
-            <small className="app-brand-meta">On-chain voting</small>
-          </span>
+          <img
+            src="/logo.png"
+            alt="Logo"
+            style={{ height: 100, width: 100, objectFit: "contain" }}
+          />
+          <span className="visually-hidden">Voting DApp On-chain voting</span>
         </Link>
 
         <button

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "../hooks/useWallet";
+import useDocumentTitle from "../hooks/useDocumentTitle";
 import {
   assertCanSendTransaction,
   cacheVotedCandidate,
@@ -112,6 +113,7 @@ const getStatusTone = (status) => {
  * VotingPage component allows users to view active voting sessions and cast votes.
  */
 const VotingPage = () => {
+  useDocumentTitle("Vote");
   // State variables
   const [sessions, setSessions] = useState([]); // Stores fetched voting sessions
   const [error, setError] = useState(""); // For displaying error messages

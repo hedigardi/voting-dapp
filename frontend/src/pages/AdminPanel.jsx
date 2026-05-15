@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "../hooks/useWallet";
+import useDocumentTitle from "../hooks/useDocumentTitle";
 import {
   assertCanSendTransaction,
   getContract,
@@ -71,6 +72,7 @@ const getStatusTone = (status) => {
 };
 
 const AdminPanel = () => {
+  useDocumentTitle("Admin Panel");
   const [title, setTitle] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");

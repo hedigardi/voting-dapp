@@ -1,6 +1,6 @@
 import votingContractAbi from "../generated/VotingContract.abi.json";
 
-const DEFAULT_CONTRACT_ADDRESS = "0xd8eb00a7c30A5de84732719137529db6e06BdD76";
+const DEFAULT_CONTRACT_ADDRESS = "0xDB2F8c3d1509858Df5Fe49fb9909f32E7E48948B";
 
 const readEnvValue = (key, fallbackValue = "") => {
   const value = import.meta.env?.[key];

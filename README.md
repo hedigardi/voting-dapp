@@ -32,7 +32,7 @@ The wallet that deployed the contract is the owner and has exclusive access to t
 ## Current Network
 
 - Frontend target network: Optimism Sepolia (`chainId 11155420`, `0xaa37dc`)
-- Deployed contract: `0xd8eb00a7c30A5de84732719137529db6e06BdD76`
+- Deployed contract: `0xDB2F8c3d1509858Df5Fe49fb9909f32E7E48948B`
 - Gitcoin Passport decoder: `0xe53C60F8069C2f0c3a84F9B3DB5cf56f3100ba56`
 
 ## Tech Stack
@@ -82,6 +82,7 @@ Other frontend scripts:
 ```sh
 npm run preview --prefix frontend   # preview production build locally
 npm run lint --prefix frontend       # ESLint
+npm run start:prod                   # serve frontend/dist on port 3000 (fails if port is occupied)
 ```
 
 ## Deploy Contract (Ignition)

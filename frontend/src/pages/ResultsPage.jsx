@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "../hooks/useWallet";
+import useDocumentTitle from "../hooks/useDocumentTitle";
 import {
   getReadOnlyContract,
   CHAIN_NAME,
@@ -70,6 +71,7 @@ const getStatusTone = (status) => {
  * ResultsPage component displays the results of completed voting sessions.
  */
 const ResultsPage = () => {
+  useDocumentTitle("Results");
   // State variables
   const [sessions, setSessions] = useState([]); // Stores fetched voting sessions
   const [error, setError] = useState(""); // For displaying error messages
