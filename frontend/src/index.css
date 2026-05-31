@@ -43,11 +43,56 @@ body {
 }
 
 .app-shell {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
 }
 
 .app-main {
+  flex: 1;
   padding: 2rem 0 4rem;
+}
+
+.app-footer {
+  margin-top: auto;
+  padding: 1rem 0 1.15rem;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  background: linear-gradient(
+    120deg,
+    rgba(255, 255, 255, 0.78),
+    rgba(241, 245, 249, 0.72)
+  );
+  backdrop-filter: blur(10px);
+}
+
+.app-footer-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.app-footer-copy,
+.app-footer-product {
+  margin: 0;
+  font-size: 0.86rem;
+  letter-spacing: 0.01em;
+  color: #475569;
+}
+
+.app-footer-product {
+  text-align: right;
+}
+
+.app-footer-product a {
+  color: var(--app-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.app-footer-product a:hover {
+  color: #1e40af;
+  text-decoration: underline;
 }
 
 .app-navbar {
@@ -1089,6 +1134,15 @@ body {
 @media (max-width: 767px) {
   .app-main {
     padding-top: 1rem;
+  }
+
+  .app-footer-inner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .app-footer-product {
+    text-align: left;
   }
 
   .page-shell {

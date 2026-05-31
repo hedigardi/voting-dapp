@@ -34,6 +34,7 @@ const Header = () => {
   const isPublicSessionRoute = location.pathname.startsWith("/s/");
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [isNavExpanded, setIsNavExpanded] = useState(false);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -49,7 +50,10 @@ const Header = () => {
 
   useEffect(() => {
     setDropdownOpen(false);
+    setIsNavExpanded(false);
   }, [location.pathname]);
+
+  const closeNavMenu = () => setIsNavExpanded(false);
 
   const getNavClass = ({ isActive }) =>
     `nav-link app-nav-link${isActive ? " app-nav-link-active" : ""}`;
@@ -60,6 +64,7 @@ const Header = () => {
         <Link
           className="navbar-brand app-brand d-flex align-items-center gap-2"
           to={isPublicSessionRoute ? location.pathname : "/"}
+          onClick={closeNavMenu}
         >
           <img
             src="/logo.png"
@@ -70,35 +75,50 @@ const Header = () => {
         </Link>
 
         <button
-          className="navbar-toggler"
+          className={`navbar-toggler${isNavExpanded ? "" : " collapsed"}`}
           type="button"
-          data-bs-toggle="collapse"
-          data-bs-target="#navbarNav"
           aria-controls="navbarNav"
-          aria-expanded="false"
+          aria-expanded={isNavExpanded}
           aria-label="Toggle navigation"
+          onClick={() => setIsNavExpanded((v) => !v)}
         >
           <span className="navbar-toggler-icon"></span>
         </button>
 
-        <div className="collapse navbar-collapse" id="navbarNav">
+        <div
+          className={`collapse navbar-collapse${isNavExpanded ? " show" : ""}`}
+          id="navbarNav"
+        >
           <ul className="navbar-nav ms-auto app-nav-list align-items-lg-center">
             {!isPublicSessionRoute && (
               <>
                 <li className="nav-item">
-                  <NavLink className={getNavClass} to="/" end>
+                  <NavLink
+                    className={getNavClass}
+                    to="/"
+                    end
+                    onClick={closeNavMenu}
+                  >
                     Voting
                   </NavLink>
                 </li>
 
                 <li className="nav-item">
-                  <NavLink className={getNavClass} to="/results">
+                  <NavLink
+                    className={getNavClass}
+                    to="/results"
+                    onClick={closeNavMenu}
+                  >
                     Results
                   </NavLink>
                 </li>
 
                 <li className="nav-item">
-                  <NavLink className={getNavClass} to="/admin">
+                  <NavLink
+                    className={getNavClass}
+                    to="/admin"
+                    onClick={closeNavMenu}
+                  >
                     Admin Panel
                   </NavLink>
                 </li>

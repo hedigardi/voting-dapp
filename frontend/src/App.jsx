@@ -58,6 +58,17 @@ const App = () => (
       <main className="app-main">
         <GuardedRoutes />
       </main>
+      <footer className="app-footer">
+        <div className="container app-footer-inner">
+          <p className="app-footer-copy">
+            Copyright © {new Date().getFullYear()} Voting DApp. All rights
+            reserved.
+          </p>
+          <p className="app-footer-product">
+            A product from <a href="https://hedigardi.com">hedigardi.com</a>
+          </p>
+        </div>
+      </footer>
     </div>
   </Router>
 );
