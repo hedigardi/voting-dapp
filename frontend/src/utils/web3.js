@@ -375,7 +375,7 @@ export const clearPendingVotedCandidate = (sessionId, account) => {
   }
 };
 
-const buildVoteEventFromBlocks = (latestBlock) => {
+export const buildVoteEventFromBlocks = (latestBlock) => {
   const lookbacks = [2500, 20000, 100000, 500000, 1500000];
   const blocks = lookbacks.map((windowSize) =>
     Math.max(Number(latestBlock) - windowSize, 0),

@@ -12,64 +12,14 @@ import {
   switchToSupportedNetwork,
   shortenAddress,
 } from "../utils/web3";
-
-const formatTimestamp = (timestamp) => {
-  const date = new Date(timestamp * 1000);
-  const formatter = new Intl.DateTimeFormat(navigator.language || "en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-  const timeFormatter = new Intl.DateTimeFormat(navigator.language || "en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
-  const dateStr = formatter.format(date);
-  const timeStr = timeFormatter.format(date);
-  return `${dateStr}\n${timeStr}`;
-};
-
-const formatSyncTime = (timestampMs) => {
-  if (!timestampMs) {
-    return "--:--";
-  }
-
-  return new Intl.DateTimeFormat(navigator.language || "en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(timestampMs));
-};
-
-const toSafeNumber = (value) => {
-  try {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  } catch {
-    return 0;
-  }
-};
-
-const formatVoteCount = (count) => {
-  const voteCount = toSafeNumber(count);
-  return `${voteCount} ${voteCount === 1 ? "vote" : "votes"}`;
-};
-
-const deriveSessionStatus = ({ session, currentTime, candidateCount }) => {
-  if (!session.isActive) return "Inactive";
-  if (currentTime > Number(session.endTime)) return "Completed";
-  if (currentTime < Number(session.startTime)) return "Not Started";
-  if (candidateCount === 0) return "Not Ready";
-  return "Active";
-};
-
-const getStatusTone = (status) => {
-  if (status === "Active") return "status-pill status-pill-live";
-  if (status === "Not Started") return "status-pill status-pill-upcoming";
-  if (status === "Completed") return "status-pill status-pill-done";
-  return "status-pill status-pill-neutral";
-};
+import {
+  deriveSessionStatus,
+  formatSyncTime,
+  formatTimestamp,
+  formatVoteCount,
+  getStatusTone,
+  toSafeNumber,
+} from "../utils/format";
 
 const AdminPanel = () => {
   useDocumentTitle("Admin Panel");
@@ -1015,26 +965,41 @@ const AdminPanel = () => {
 
                 {session.status === "Completed" &&
                   (() => {
+                    const sessionCandidates =
+                      candidatesBySession[session.id] || [];
+                    const totalVotes = sessionCandidates.reduce(
+                      (sum, candidate) => sum + toSafeNumber(candidate.votes),
+                      0,
+                    );
                     const isNoCandidates = session.winner === "No candidates";
                     const isTie = !isNoCandidates && session.isTie;
+                    const hasNoVotes =
+                      !isNoCandidates &&
+                      sessionCandidates.length > 0 &&
+                      totalVotes === 0;
 
-                    const toneClass = isNoCandidates
-                      ? "results-outcome-banner-empty"
-                      : isTie
-                        ? "results-outcome-banner-tie"
-                        : "results-outcome-banner-winner";
+                    const toneClass =
+                      isNoCandidates || hasNoVotes
+                        ? "results-outcome-banner-empty"
+                        : isTie
+                          ? "results-outcome-banner-tie"
+                          : "results-outcome-banner-winner";
 
                     const label = isNoCandidates
                       ? "No candidates"
-                      : isTie
-                        ? "Tie detected"
-                        : "Winner";
+                      : hasNoVotes
+                        ? "No votes"
+                        : isTie
+                          ? "Tie detected"
+                          : "Winner";
 
                     const value = isNoCandidates
                       ? "No candidates available"
-                      : isTie
-                        ? "No clear winner"
-                        : session.winner || "Winner unavailable";
+                      : hasNoVotes
+                        ? "No votes cast yet"
+                        : isTie
+                          ? "No clear winner"
+                          : session.winner || "Winner unavailable";
 
                     return (
                       <div

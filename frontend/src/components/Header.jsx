@@ -31,7 +31,6 @@ const Header = () => {
   } = useWallet();
 
   const location = useLocation();
-  const isPublicSessionRoute = location.pathname.startsWith("/s/");
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [isNavExpanded, setIsNavExpanded] = useState(false);
@@ -63,7 +62,7 @@ const Header = () => {
       <div className="container-fluid">
         <Link
           className="navbar-brand app-brand d-flex align-items-center gap-2"
-          to={isPublicSessionRoute ? location.pathname : "/"}
+          to="/"
           onClick={closeNavMenu}
         >
           <img
@@ -90,40 +89,36 @@ const Header = () => {
           id="navbarNav"
         >
           <ul className="navbar-nav ms-auto app-nav-list align-items-lg-center">
-            {!isPublicSessionRoute && (
-              <>
-                <li className="nav-item">
-                  <NavLink
-                    className={getNavClass}
-                    to="/"
-                    end
-                    onClick={closeNavMenu}
-                  >
-                    Voting
-                  </NavLink>
-                </li>
+            <li className="nav-item">
+              <NavLink
+                className={getNavClass}
+                to="/"
+                end
+                onClick={closeNavMenu}
+              >
+                Voting
+              </NavLink>
+            </li>
 
-                <li className="nav-item">
-                  <NavLink
-                    className={getNavClass}
-                    to="/results"
-                    onClick={closeNavMenu}
-                  >
-                    Results
-                  </NavLink>
-                </li>
+            <li className="nav-item">
+              <NavLink
+                className={getNavClass}
+                to="/results"
+                onClick={closeNavMenu}
+              >
+                Results
+              </NavLink>
+            </li>
 
-                <li className="nav-item">
-                  <NavLink
-                    className={getNavClass}
-                    to="/admin"
-                    onClick={closeNavMenu}
-                  >
-                    Admin Panel
-                  </NavLink>
-                </li>
-              </>
-            )}
+            <li className="nav-item">
+              <NavLink
+                className={getNavClass}
+                to="/admin"
+                onClick={closeNavMenu}
+              >
+                Admin Panel
+              </NavLink>
+            </li>
 
             <li className="nav-item app-wallet-slot" ref={dropdownRef}>
               {walletConnected ? (

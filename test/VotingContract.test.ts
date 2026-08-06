@@ -248,6 +248,28 @@ describe("VotingContract", function () {
       const sessionAfterSecondArchive = await votingContract.votingSessions(0);
       expect(sessionAfterSecondArchive.isActive).to.equal(false);
     });
+
+    it("Should fail to archive a session as a non-creator", async function () {
+      const { votingContract, user1 } = await deployVotingFixture();
+
+      const latestBlock = await ethers.provider.getBlock("latest");
+      const currentTime = latestBlock!.timestamp;
+      const startTime = currentTime + 100;
+      const endTime = startTime + 100;
+
+      await votingContract.createVotingSession(
+        "Restricted Archive",
+        startTime,
+        endTime,
+      );
+
+      await ethers.provider.send("evm_setNextBlockTimestamp", [endTime + 1]);
+      await ethers.provider.send("evm_mine");
+
+      await expect(
+        votingContract.connect(user1).archiveSession(0),
+      ).to.be.revertedWith("Only the session creator can perform this action");
+    });
   });
 
   // Candidate management tests

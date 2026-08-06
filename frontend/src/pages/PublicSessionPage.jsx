@@ -7,6 +7,7 @@ import {
   cacheVotedCandidate,
   clearPendingVotedCandidate,
   getContract,
+  getReadOnlyContract,
   getCachedVotedCandidate,
   getPendingVotedCandidate,
   getRecommendedSendOptions,
@@ -18,52 +19,13 @@ import {
   parseWeb3ErrorMessage,
   switchToSupportedNetwork,
 } from "../utils/web3";
-
-const formatTimestamp = (timestamp) => {
-  const date = new Date(timestamp * 1000);
-  const formatter = new Intl.DateTimeFormat(navigator.language || "en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-  const timeFormatter = new Intl.DateTimeFormat(navigator.language || "en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
-  const dateStr = formatter.format(date);
-  const timeStr = timeFormatter.format(date);
-  return `${dateStr}\n${timeStr}`;
-};
-
-const formatSyncTime = (timestampMs) => {
-  if (!timestampMs) {
-    return "--:--";
-  }
-
-  return new Intl.DateTimeFormat(navigator.language || "en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(timestampMs));
-};
-
-const formatVoteCount = (count) => `${count} ${count === 1 ? "vote" : "votes"}`;
-
-const deriveSessionStatus = ({ session, currentTime, candidateCount }) => {
-  if (!session.isActive) return "Inactive";
-  if (currentTime > Number(session.endTime)) return "Completed";
-  if (currentTime < Number(session.startTime)) return "Not Started";
-  if (candidateCount === 0) return "Not Ready";
-  return "Active";
-};
-
-const getStatusTone = (status) => {
-  if (status === "Completed") return "status-pill status-pill-done";
-  if (status === "Active") return "status-pill status-pill-live";
-  if (status === "Not Started") return "status-pill status-pill-upcoming";
-  return "status-pill status-pill-neutral";
-};
+import {
+  deriveSessionStatus,
+  formatSyncTime,
+  formatTimestamp,
+  formatVoteCount,
+  getStatusTone,
+} from "../utils/format";
 
 const PublicSessionPage = () => {
   const { sessionId } = useParams();
@@ -118,7 +80,7 @@ const PublicSessionPage = () => {
           setLoadingContext("session");
           setLoading(true);
         }
-        const contract = getContract();
+        const contract = getReadOnlyContract();
         const sessionCount = Number(
           await contract.methods.sessionCount().call(),
         );
@@ -300,19 +262,13 @@ const PublicSessionPage = () => {
   };
 
   useEffect(() => {
-    if (!walletConnected || !account || !hasResolvedChainId || isWrongNetwork) {
+    if (!hasResolvedChainId) {
       setSession(null);
       return;
     }
 
     fetchSession();
-  }, [
-    walletConnected,
-    account,
-    hasResolvedChainId,
-    isWrongNetwork,
-    fetchSession,
-  ]);
+  }, [walletConnected, account, hasResolvedChainId, fetchSession]);
 
   useEffect(() => {
     if (walletError) {
@@ -401,12 +357,15 @@ const PublicSessionPage = () => {
         </div>
       )}
 
-      {!walletConnected ? (
+      {!walletConnected && (
         <section className="connect-panel">
           <div>
-            <p className="page-kicker">Wallet required</p>
-            <h2>Connect your wallet to access this session.</h2>
-            <p>You need a wallet connection to participate in this session.</p>
+            <p className="page-kicker">Wallet required to vote</p>
+            <h2>Connect your wallet to vote in this session.</h2>
+            <p>
+              You can already view the session details below — they are read
+              directly from the contract. Connect your wallet to cast your vote.
+            </p>
           </div>
           <div className="connect-panel-side">
             <button
@@ -420,240 +379,247 @@ const PublicSessionPage = () => {
             </p>
           </div>
         </section>
+      )}
+
+      {error && <div className="alert alert-danger">{error}</div>}
+
+      {postTxSyncUntil > Date.now() && (
+        <div className="alert alert-info" role="status">
+          Fetching the latest results...
+        </div>
+      )}
+
+      {isWrongNetwork && (
+        <div className="alert alert-warning">
+          Your wallet is connected to the wrong network. Please switch to{" "}
+          {CHAIN_NAME} to use this session.
+          <div className="mt-2">
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={handleNetworkSwitch}
+            >
+              Switch to {CHAIN_NAME}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!session ? (
+        <section className="empty-state-panel">
+          <h3>Session unavailable</h3>
+          <p>
+            This link may be invalid, or the session is not accessible from the
+            connected wallet/network state.
+          </p>
+        </section>
       ) : (
-        <>
-          {error && <div className="alert alert-danger">{error}</div>}
-
-          {postTxSyncUntil > Date.now() && (
-            <div className="alert alert-info" role="status">
-              Fetching the latest results...
-            </div>
-          )}
-
-          {isWrongNetwork && (
-            <div className="alert alert-warning">
-              Your wallet is connected to the wrong network. Please switch to{" "}
-              {CHAIN_NAME} to use this session.
-              <div className="mt-2">
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={handleNetworkSwitch}
-                >
-                  Switch to {CHAIN_NAME}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!session ? (
-            <section className="empty-state-panel">
-              <h3>Session unavailable</h3>
-              <p>
-                This link may be invalid, or the session is not accessible from
-                the connected wallet/network state.
-              </p>
-            </section>
-          ) : (
-            <section className="session-grid">
-              <article className="session-card">
-                <div className="session-card-top">
-                  <div>
-                    <p className="session-eyebrow">Session #{session.id + 1}</p>
-                    <h3>{session.title}</h3>
-                    <div className="badge-container">
-                      {session.requiresPassport && (
-                        <span
-                          className="passport-badge"
-                          title="Requires Gitcoin Passport score ≥ 20"
-                        >
-                          Passport required
-                        </span>
-                      )}
-                      <span
-                        className={`session-sync-badge ${
-                          session.isVotePending || postTxSyncUntil > Date.now()
-                            ? "session-sync-badge-live"
-                            : ""
-                        }`}
-                      >
-                        <span className="session-sync-dot" aria-hidden="true" />
-                        Last updated: {formatSyncTime(session.syncedAt)}
-                      </span>
-                    </div>
-                  </div>
-                  <span className={getStatusTone(session.status)}>
-                    {session.status}
+        <section className="session-grid">
+          <article className="session-card">
+            <div className="session-card-top">
+              <div>
+                <p className="session-eyebrow">Session #{session.id + 1}</p>
+                <h3>{session.title}</h3>
+                <div className="badge-container">
+                  {session.requiresPassport && (
+                    <span
+                      className="passport-badge"
+                      title="Requires Gitcoin Passport score ≥ 20"
+                    >
+                      Passport required
+                    </span>
+                  )}
+                  <span
+                    className={`session-sync-badge ${
+                      session.isVotePending || postTxSyncUntil > Date.now()
+                        ? "session-sync-badge-live"
+                        : ""
+                    }`}
+                  >
+                    <span className="session-sync-dot" aria-hidden="true" />
+                    Last updated: {formatSyncTime(session.syncedAt)}
                   </span>
                 </div>
+              </div>
+              <span className={getStatusTone(session.status)}>
+                {session.status}
+              </span>
+            </div>
 
-                <div className="session-meta-grid">
-                  <div>
-                    <span className="wallet-label">Starts</span>
-                    <strong>{formatTimestamp(session.startTime)}</strong>
-                  </div>
-                  <div>
-                    <span className="wallet-label">Ends</span>
-                    <strong>{formatTimestamp(session.endTime)}</strong>
-                  </div>
-                  <div>
-                    <span className="wallet-label">Candidates</span>
-                    <strong>{session.candidates.length}</strong>
-                  </div>
-                </div>
+            <div className="session-meta-grid">
+              <div>
+                <span className="wallet-label">Starts</span>
+                <strong>{formatTimestamp(session.startTime)}</strong>
+              </div>
+              <div>
+                <span className="wallet-label">Ends</span>
+                <strong>{formatTimestamp(session.endTime)}</strong>
+              </div>
+              <div>
+                <span className="wallet-label">Candidates</span>
+                <strong>{session.candidates.length}</strong>
+              </div>
+            </div>
 
-                {session.status !== "Completed" &&
-                (session.hasVoted || session.isVotePending) ? (
-                  <div className="vote-confirmation" role="status">
-                    <span className="vote-confirmation-label">
-                      {session.hasVoted ? "Vote confirmed" : "Vote submitted"}
-                    </span>
-                    <strong className="vote-confirmation-text">
-                      {session.hasVoted
-                        ? "Your vote has already been recorded for this session."
-                        : "Waiting for blockchain confirmation. This may take a short while."}
-                    </strong>
-                  </div>
-                ) : null}
+            {session.status !== "Completed" &&
+            (session.hasVoted || session.isVotePending) ? (
+              <div className="vote-confirmation" role="status">
+                <span className="vote-confirmation-label">
+                  {session.hasVoted ? "Vote confirmed" : "Vote submitted"}
+                </span>
+                <strong className="vote-confirmation-text">
+                  {session.hasVoted
+                    ? "Your vote has already been recorded for this session."
+                    : "Waiting for blockchain confirmation. This may take a short while."}
+                </strong>
+              </div>
+            ) : null}
 
-                <div className="candidate-stack">
-                  {session.candidates.map((candidate) => {
-                    if (session.status === "Completed") {
-                      const topVotes = Math.max(
-                        ...session.candidates.map((entry) => entry.votes),
-                        1,
-                      );
-                      const width = `${Math.max(
-                        (candidate.votes / topVotes) * 100,
-                        candidate.votes > 0 ? 12 : 0,
-                      )}%`;
+            <div className="candidate-stack">
+              {session.candidates.map((candidate) => {
+                if (session.status === "Completed") {
+                  const topVotes = Math.max(
+                    ...session.candidates.map((entry) => entry.votes),
+                    1,
+                  );
+                  const width = `${Math.max(
+                    (candidate.votes / topVotes) * 100,
+                    candidate.votes > 0 ? 12 : 0,
+                  )}%`;
 
-                      return (
-                        <div className="results-row" key={candidate.id}>
-                          <div className="results-row-head">
-                            <strong>{candidate.name}</strong>
-                            <span className="candidate-meta">
-                              {formatVoteCount(candidate.votes)}
-                            </span>
-                          </div>
-                          <div className="results-bar-track">
-                            <span
-                              className="results-bar-fill"
-                              style={{ width }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div
-                        className={`candidate-row ${
-                          (session.hasVoted || session.isVotePending) &&
-                          candidate.id === session.votedCandidateId
-                            ? "candidate-row-voted"
-                            : ""
-                        }`}
-                        key={candidate.id}
-                      >
-                        <div>
-                          <strong>{candidate.name}</strong>
-                        </div>
-                        {session.hasVoted || session.isVotePending ? (
-                          candidate.id === session.votedCandidateId ? (
-                            <span
-                              className="candidate-choice-badge"
-                              role="img"
-                              aria-label="Your selected candidate"
-                              title="Your selected candidate"
-                            >
-                              <svg
-                                className="candidate-choice-icon"
-                                viewBox="0 0 24 24"
-                                aria-hidden="true"
-                              >
-                                <path
-                                  d="M9.2 16.4L4.8 12l1.4-1.4 3 3 8.6-8.6 1.4 1.4z"
-                                  fill="currentColor"
-                                />
-                              </svg>
-                            </span>
-                          ) : null
-                        ) : session.status === "Active" ? (
-                          <button
-                            className="btn btn-primary session-action"
-                            onClick={() => voteForCandidate(candidate.id)}
-                            disabled={isWrongNetwork || session.isVotePending}
-                          >
-                            Vote now
-                          </button>
-                        ) : (
-                          <span className="candidate-state">
-                            {session.status === "Not Started"
-                              ? "Opens soon"
-                              : "Read only"}
-                          </span>
-                        )}
+                  return (
+                    <div className="results-row" key={candidate.id}>
+                      <div className="results-row-head">
+                        <strong>{candidate.name}</strong>
+                        <span className="candidate-meta">
+                          {formatVoteCount(candidate.votes)}
+                        </span>
                       </div>
-                    );
-                  })}
-                </div>
-
-                {sessionError && (
-                  <div className="admin-feedback-inline" aria-live="polite">
-                    <div
-                      className="admin-feedback-toast admin-feedback-toast-error"
-                      role="alert"
-                    >
-                      <span className="admin-feedback-label">
-                        Action required
-                      </span>
-                      <strong className="admin-feedback-message">
-                        {sessionError}
-                      </strong>
+                      <div className="results-bar-track">
+                        <span className="results-bar-fill" style={{ width }} />
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                }
 
-                {session.status === "Completed" &&
-                  (() => {
-                    const isNoCandidates = session.candidates.length === 0;
-                    const isTie = !isNoCandidates && session.isTie;
-
-                    const toneClass = isNoCandidates
-                      ? "results-outcome-banner-empty"
-                      : isTie
-                        ? "results-outcome-banner-tie"
-                        : "results-outcome-banner-winner";
-
-                    const label = isNoCandidates
-                      ? "No candidates"
-                      : isTie
-                        ? "Tie detected"
-                        : "Winner";
-
-                    const value = isNoCandidates
-                      ? "No candidates available"
-                      : isTie
-                        ? "No clear winner"
-                        : session.winner;
-
-                    return (
-                      <div
-                        className={`results-outcome-banner ${toneClass}`}
-                        role="status"
+                return (
+                  <div
+                    className={`candidate-row ${
+                      (session.hasVoted || session.isVotePending) &&
+                      candidate.id === session.votedCandidateId
+                        ? "candidate-row-voted"
+                        : ""
+                    }`}
+                    key={candidate.id}
+                  >
+                    <div>
+                      <strong>{candidate.name}</strong>
+                    </div>
+                    {session.hasVoted || session.isVotePending ? (
+                      candidate.id === session.votedCandidateId ? (
+                        <span
+                          className="candidate-choice-badge"
+                          role="img"
+                          aria-label="Your selected candidate"
+                          title="Your selected candidate"
+                        >
+                          <svg
+                            className="candidate-choice-icon"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M9.2 16.4L4.8 12l1.4-1.4 3 3 8.6-8.6 1.4 1.4z"
+                              fill="currentColor"
+                            />
+                          </svg>
+                        </span>
+                      ) : null
+                    ) : session.status === "Active" ? (
+                      <button
+                        className="btn btn-primary session-action"
+                        onClick={() =>
+                          walletConnected
+                            ? voteForCandidate(candidate.id)
+                            : connectWallet()
+                        }
+                        disabled={isWrongNetwork || session.isVotePending}
                       >
-                        <span className="results-outcome-label">{label}</span>
-                        <strong className="results-outcome-value">
-                          {value}
-                        </strong>
-                      </div>
-                    );
-                  })()}
-              </article>
-            </section>
-          )}
-        </>
+                        {walletConnected ? "Vote now" : "Connect to vote"}
+                      </button>
+                    ) : (
+                      <span className="candidate-state">
+                        {session.status === "Not Started"
+                          ? "Opens soon"
+                          : "Read only"}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {sessionError && (
+              <div className="admin-feedback-inline" aria-live="polite">
+                <div
+                  className="admin-feedback-toast admin-feedback-toast-error"
+                  role="alert"
+                >
+                  <span className="admin-feedback-label">Action required</span>
+                  <strong className="admin-feedback-message">
+                    {sessionError}
+                  </strong>
+                </div>
+              </div>
+            )}
+
+            {session.status === "Completed" &&
+              (() => {
+                const isNoCandidates = session.candidates.length === 0;
+                const isTie = !isNoCandidates && session.isTie;
+                const hasNoVotes =
+                  !isNoCandidates &&
+                  session.candidates.length > 0 &&
+                  session.candidates.reduce(
+                    (sum, candidate) => sum + Number(candidate.votes),
+                    0,
+                  ) === 0;
+
+                const toneClass =
+                  isNoCandidates || hasNoVotes
+                    ? "results-outcome-banner-empty"
+                    : isTie
+                      ? "results-outcome-banner-tie"
+                      : "results-outcome-banner-winner";
+
+                const label = isNoCandidates
+                  ? "No candidates"
+                  : hasNoVotes
+                    ? "No votes"
+                    : isTie
+                      ? "Tie detected"
+                      : "Winner";
+
+                const value = isNoCandidates
+                  ? "No candidates available"
+                  : hasNoVotes
+                    ? "No votes cast yet"
+                    : isTie
+                      ? "No clear winner"
+                      : session.winner;
+
+                return (
+                  <div
+                    className={`results-outcome-banner ${toneClass}`}
+                    role="status"
+                  >
+                    <span className="results-outcome-label">{label}</span>
+                    <strong className="results-outcome-value">{value}</strong>
+                  </div>
+                );
+              })()}
+          </article>
+        </section>
       )}
     </div>
   );
