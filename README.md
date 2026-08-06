@@ -32,7 +32,7 @@ The wallet that deployed the contract is the owner and has exclusive access to t
 ## Current Network
 
 - Frontend target network: Optimism Sepolia (`chainId 11155420`, `0xaa37dc`)
-- Deployed contract: `0xDB2F8c3d1509858Df5Fe49fb9909f32E7E48948B`
+- Deployed contract: `0x6787B44FdC6Cc82126C4244FF4f2a61212359374`
 - Gitcoin Passport decoder: `0xe53C60F8069C2f0c3a84F9B3DB5cf56f3100ba56`
 
 ## Tech Stack

@@ -3,10 +3,12 @@ import { useWallet } from "../hooks/useWallet";
 import useDocumentTitle from "../hooks/useDocumentTitle";
 import {
   assertCanSendTransaction,
+  buildVoteEventFromBlocks,
   cacheVotedCandidate,
   clearPendingVotedCandidate,
   getContract,
   getReadOnlyContract,
+  getWeb3,
   getCachedVotedCandidate,
   getPendingVotedCandidate,
   getRecommendedSendOptions,
@@ -19,35 +21,12 @@ import {
   parseWeb3ErrorMessage,
   switchToSupportedNetwork,
 } from "../utils/web3";
-
-const formatTimestamp = (timestamp) => {
-  const date = new Date(timestamp * 1000);
-  const formatter = new Intl.DateTimeFormat(navigator.language || "en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-  const timeFormatter = new Intl.DateTimeFormat(navigator.language || "en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
-  const dateStr = formatter.format(date);
-  const timeStr = timeFormatter.format(date);
-  return `${dateStr}\n${timeStr}`;
-};
-
-const formatSyncTime = (timestampMs) => {
-  if (!timestampMs) {
-    return "--:--";
-  }
-
-  return new Intl.DateTimeFormat(navigator.language || "en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(timestampMs));
-};
+import {
+  deriveSessionStatus,
+  formatSyncTime,
+  formatTimestamp,
+  getStatusTone,
+} from "../utils/format";
 
 const getVotedCandidatesBySession = async (
   contract,
@@ -62,51 +41,51 @@ const getVotedCandidatesBySession = async (
     }
   });
 
-  try {
-    const voteEvents = await contract.getPastEvents("VoteCast", {
-      filter: { voter: account },
-      fromBlock: 0,
-      toBlock: "latest",
-    });
-
-    return voteEvents.reduce(
-      (acc, event) => {
-        const sessionId = Number(event.returnValues.sessionId);
-        const candidateId = Number(event.returnValues.candidateId);
-        cacheVotedCandidate(sessionId, account, candidateId);
-        acc[sessionId] = candidateId;
-        return acc;
-      },
-      { ...fallback },
-    );
-  } catch (err) {
-    console.error("Failed to resolve voted candidates from events:", err);
+  if (!account) {
     return fallback;
   }
-};
 
-const deriveSessionStatus = ({ session, currentTime, candidateCount }) => {
-  if (!session.isActive) return "Inactive";
-  if (currentTime > Number(session.endTime)) return "Completed";
-  if (currentTime < Number(session.startTime)) return "Not Started";
-  if (candidateCount === 0) return "Not Ready";
-  return "Active";
-};
+  const resolved = { ...fallback };
 
-const getStatusTone = (status) => {
-  if (status === "Active") {
-    return "status-pill status-pill-live";
+  // Query the latest recent blocks first and grow the window on failure,
+  // instead of scanning from block 0 (which is slow / can time out on L2s).
+  let fromBlocks = [0];
+  try {
+    const web3 = getWeb3();
+    const latestBlock = await web3.eth.getBlockNumber();
+    fromBlocks = buildVoteEventFromBlocks(latestBlock);
+  } catch {
+    // Keep full-history fallback if the block number RPC fails.
   }
 
-  if (status === "Not Started") {
-    return "status-pill status-pill-upcoming";
+  let lastError = null;
+  for (const fromBlock of fromBlocks) {
+    try {
+      const voteEvents = await contract.getPastEvents("VoteCast", {
+        filter: { voter: account },
+        fromBlock,
+        toBlock: "latest",
+      });
+
+      if (voteEvents.length > 0) {
+        voteEvents.forEach((event) => {
+          const sessionId = Number(event.returnValues.sessionId);
+          const candidateId = Number(event.returnValues.candidateId);
+          cacheVotedCandidate(sessionId, account, candidateId);
+          resolved[sessionId] = candidateId;
+        });
+        return resolved;
+      }
+    } catch (err) {
+      lastError = err;
+    }
   }
 
-  if (status === "Not Ready") {
-    return "status-pill status-pill-neutral";
+  if (lastError) {
+    console.warn("Failed to resolve voted candidates from events:", lastError);
   }
 
-  return "status-pill status-pill-neutral";
+  return resolved;
 };
 
 /**
@@ -169,9 +148,9 @@ const VotingPage = () => {
         for (let i = 0; i < sessionCount; i++) {
           const session = await contract.methods.votingSessions(i).call();
           const candidates = await contract.methods.getCandidates(i).call();
-          const hasVoted = await contract.methods
-            .hasUserVoted(i, account)
-            .call();
+          const hasVoted = account
+            ? await contract.methods.hasUserVoted(i, account).call()
+            : false;
           const fallbackCandidateId = getCachedVotedCandidate(i, account);
           const pendingCandidateId = getPendingVotedCandidate(i, account);
           let resolvedCandidateId =
@@ -346,19 +325,13 @@ const VotingPage = () => {
    * Effect hook to connect the wallet and fetch sessions on component mount.
    */
   useEffect(() => {
-    if (!walletConnected || !account || !hasResolvedChainId || isWrongNetwork) {
+    if (!hasResolvedChainId) {
       setSessions([]);
       return;
     }
 
     fetchSessions();
-  }, [
-    walletConnected,
-    account,
-    hasResolvedChainId,
-    isWrongNetwork,
-    fetchSessions,
-  ]);
+  }, [walletConnected, account, hasResolvedChainId, fetchSessions]);
 
   useEffect(() => {
     if (walletError) {
@@ -460,14 +433,15 @@ const VotingPage = () => {
         </div>
       )}
 
-      {!walletConnected ? (
+      {!walletConnected && (
         <section className="connect-panel">
           <div>
-            <p className="page-kicker">Wallet required</p>
-            <h2>Connect your wallet to see live sessions.</h2>
+            <p className="page-kicker">Wallet required to vote</p>
+            <h2>Connect your wallet to vote.</h2>
             <p>
-              The app reads active and scheduled sessions directly from the
-              contract. Once connected, you can vote without leaving this view.
+              You can already browse active and scheduled sessions below — they
+              are read directly from the contract. Connect your wallet to cast a
+              vote without leaving this view.
             </p>
             <div className="feature-row">
               <span className="feature-chip">Optimism Sepolia</span>
@@ -502,219 +476,213 @@ const VotingPage = () => {
             </p>
           </div>
         </section>
-      ) : (
-        <>
-          {error && <div className="alert alert-danger">{error}</div>}
+      )}
 
-          {postTxSyncUntil > Date.now() && (
-            <div className="alert alert-info" role="status">
-              Fetching the latest results...
-            </div>
-          )}
+      {error && <div className="alert alert-danger">{error}</div>}
 
-          {isWrongNetwork && (
-            <div className="alert alert-warning">
-              Your wallet is connected to the wrong network. Please switch to{" "}
-              {CHAIN_NAME} to vote.
-              <div className="mt-2">
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={handleNetworkSwitch}
-                >
-                  Switch to {CHAIN_NAME}
-                </button>
-              </div>
-            </div>
-          )}
+      {postTxSyncUntil > Date.now() && (
+        <div className="alert alert-info" role="status">
+          Fetching the latest results...
+        </div>
+      )}
 
-          {sessions.length > 0 ? (
-            <section className="session-grid">
-              {sessions.map((session) => (
-                <article className="session-card" key={session.id}>
-                  <div className="session-card-top">
-                    <div>
-                      <p className="session-eyebrow">
-                        Session #{session.id + 1}
-                      </p>
-                      <h3>{session.title}</h3>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "0.5rem",
-                        }}
-                      >
-                        <div className="badge-container">
-                          {session.requiresPassport && (
-                            <span
-                              className="passport-badge"
-                              title="Requires Gitcoin Passport score ≥ 20"
-                            >
-                              Passport required
-                            </span>
-                          )}
-                          <span
-                            className={`session-sync-badge ${
-                              session.isVotePending ||
-                              postTxSyncUntil > Date.now()
-                                ? "session-sync-badge-live"
-                                : ""
-                            }`}
-                          >
-                            <span
-                              className="session-sync-dot"
-                              aria-hidden="true"
-                            />
-                            Last updated: {formatSyncTime(session.syncedAt)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <span className={getStatusTone(session.status)}>
-                      {session.status}
-                    </span>
-                  </div>
+      {isWrongNetwork && (
+        <div className="alert alert-warning">
+          Your wallet is connected to the wrong network. Please switch to{" "}
+          {CHAIN_NAME} to vote.
+          <div className="mt-2">
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={handleNetworkSwitch}
+            >
+              Switch to {CHAIN_NAME}
+            </button>
+          </div>
+        </div>
+      )}
 
-                  <div className="session-meta-grid">
-                    <div>
-                      <span className="wallet-label">Starts</span>
-                      <strong>{formatTimestamp(session.startTime)}</strong>
-                    </div>
-                    <div>
-                      <span className="wallet-label">Ends</span>
-                      <strong>{formatTimestamp(session.endTime)}</strong>
-                    </div>
-                    <div>
-                      <span className="wallet-label">Candidates</span>
-                      <strong>{session.candidates.length}</strong>
-                    </div>
-                  </div>
-
-                  {(session.hasVoted || session.isVotePending) && (
-                    <div className="vote-confirmation" role="status">
-                      <span className="vote-confirmation-label">
-                        {session.hasVoted ? "Vote confirmed" : "Vote submitted"}
-                      </span>
-                      <strong className="vote-confirmation-text">
-                        {session.hasVoted
-                          ? "Your vote has already been recorded for this session."
-                          : "Waiting for blockchain confirmation. This may take a short while."}
-                      </strong>
-                    </div>
-                  )}
-
-                  <div className="candidate-stack">
-                    {session.candidates.map((candidate) => (
-                      <div
-                        className={`candidate-row ${
-                          (session.hasVoted || session.isVotePending) &&
-                          candidate.id === session.votedCandidateId
-                            ? "candidate-row-voted"
+      {sessions.length > 0 ? (
+        <section className="session-grid">
+          {sessions.map((session) => (
+            <article className="session-card" key={session.id}>
+              <div className="session-card-top">
+                <div>
+                  <p className="session-eyebrow">Session #{session.id + 1}</p>
+                  <h3>{session.title}</h3>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                    }}
+                  >
+                    <div className="badge-container">
+                      {session.requiresPassport && (
+                        <span
+                          className="passport-badge"
+                          title="Requires Gitcoin Passport score ≥ 20"
+                        >
+                          Passport required
+                        </span>
+                      )}
+                      <span
+                        className={`session-sync-badge ${
+                          session.isVotePending || postTxSyncUntil > Date.now()
+                            ? "session-sync-badge-live"
                             : ""
                         }`}
-                        key={candidate.id}
                       >
-                        <div>
-                          <strong>{candidate.name}</strong>
-                        </div>
-                        {session.hasVoted || session.isVotePending ? (
-                          candidate.id === session.votedCandidateId ? (
-                            <span
-                              className="candidate-choice-badge"
-                              role="img"
-                              aria-label="Your selected candidate"
-                              title="Your selected candidate"
-                            >
-                              <svg
-                                className="candidate-choice-icon"
-                                viewBox="0 0 24 24"
-                                aria-hidden="true"
-                              >
-                                <path
-                                  d="M9.2 16.4L4.8 12l1.4-1.4 3 3 8.6-8.6 1.4 1.4z"
-                                  fill="currentColor"
-                                />
-                              </svg>
-                            </span>
-                          ) : null // Removed "Not selected" for other candidates
-                        ) : session.status === "Active" ? (
-                          <button
-                            className="btn btn-primary session-action"
-                            onClick={() =>
-                              voteForCandidate(session.id, candidate.id)
-                            }
-                            disabled={isWrongNetwork || session.isVotePending}
-                          >
-                            Vote now
-                          </button>
-                        ) : (
-                          <span className="candidate-state">
-                            {session.status === "Not Started"
-                              ? "Opens soon"
-                              : "Read only"}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  {sessionErrors[session.id] && (
-                    <div className="admin-feedback-inline" aria-live="polite">
-                      <div
-                        className="admin-feedback-toast admin-feedback-toast-error"
-                        role="alert"
-                      >
-                        <span className="admin-feedback-label">
-                          Action required
-                        </span>
-                        <strong className="admin-feedback-message">
-                          {sessionErrors[session.id]}
-                        </strong>
-                      </div>
+                        <span className="session-sync-dot" aria-hidden="true" />
+                        Last updated: {formatSyncTime(session.syncedAt)}
+                      </span>
                     </div>
-                  )}
-                </article>
-              ))}
-            </section>
-          ) : (
-            <section className="empty-state-panel">
-              <h3>No active voting sessions yet</h3>
-              <p>
-                Once an admin creates a future or live session, it will appear
-                here automatically.
-              </p>
-            </section>
-          )}
+                  </div>
+                </div>
+                <span className={getStatusTone(session.status)}>
+                  {session.status}
+                </span>
+              </div>
 
-          <section className="insight-panel legal-panel">
-            <div>
-              <p className="page-kicker">Participation policy</p>
-              <h3>Important legal considerations</h3>
-              <p>
-                This voting application uses blockchain technology to ensure
-                transparency and immutability of records.
-              </p>
-            </div>
-            <ul className="legal-list">
-              <li>
-                <strong>Transparency:</strong> All transactions are stored
-                publicly on the blockchain and cannot be altered or deleted.
-              </li>
-              <li>
-                <strong>Privacy:</strong> Your wallet address is visible on the
-                blockchain, but no personal information is stored by this
-                application.
-              </li>
-              <li>
-                <strong>GDPR Compliance:</strong> By participating, you
-                acknowledge that blockchain data cannot be modified or erased,
-                as per the decentralized nature of the technology.
-              </li>
-            </ul>
-          </section>
-        </>
+              <div className="session-meta-grid">
+                <div>
+                  <span className="wallet-label">Starts</span>
+                  <strong>{formatTimestamp(session.startTime)}</strong>
+                </div>
+                <div>
+                  <span className="wallet-label">Ends</span>
+                  <strong>{formatTimestamp(session.endTime)}</strong>
+                </div>
+                <div>
+                  <span className="wallet-label">Candidates</span>
+                  <strong>{session.candidates.length}</strong>
+                </div>
+              </div>
+
+              {(session.hasVoted || session.isVotePending) && (
+                <div className="vote-confirmation" role="status">
+                  <span className="vote-confirmation-label">
+                    {session.hasVoted ? "Vote confirmed" : "Vote submitted"}
+                  </span>
+                  <strong className="vote-confirmation-text">
+                    {session.hasVoted
+                      ? "Your vote has already been recorded for this session."
+                      : "Waiting for blockchain confirmation. This may take a short while."}
+                  </strong>
+                </div>
+              )}
+
+              <div className="candidate-stack">
+                {session.candidates.map((candidate) => (
+                  <div
+                    className={`candidate-row ${
+                      (session.hasVoted || session.isVotePending) &&
+                      candidate.id === session.votedCandidateId
+                        ? "candidate-row-voted"
+                        : ""
+                    }`}
+                    key={candidate.id}
+                  >
+                    <div>
+                      <strong>{candidate.name}</strong>
+                    </div>
+                    {session.hasVoted || session.isVotePending ? (
+                      candidate.id === session.votedCandidateId ? (
+                        <span
+                          className="candidate-choice-badge"
+                          role="img"
+                          aria-label="Your selected candidate"
+                          title="Your selected candidate"
+                        >
+                          <svg
+                            className="candidate-choice-icon"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M9.2 16.4L4.8 12l1.4-1.4 3 3 8.6-8.6 1.4 1.4z"
+                              fill="currentColor"
+                            />
+                          </svg>
+                        </span>
+                      ) : null // Removed "Not selected" for other candidates
+                    ) : session.status === "Active" ? (
+                      <button
+                        className="btn btn-primary session-action"
+                        onClick={() =>
+                          walletConnected
+                            ? voteForCandidate(session.id, candidate.id)
+                            : connectWallet()
+                        }
+                        disabled={isWrongNetwork || session.isVotePending}
+                      >
+                        {walletConnected ? "Vote now" : "Connect to vote"}
+                      </button>
+                    ) : (
+                      <span className="candidate-state">
+                        {session.status === "Not Started"
+                          ? "Opens soon"
+                          : "Read only"}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {sessionErrors[session.id] && (
+                <div className="admin-feedback-inline" aria-live="polite">
+                  <div
+                    className="admin-feedback-toast admin-feedback-toast-error"
+                    role="alert"
+                  >
+                    <span className="admin-feedback-label">
+                      Action required
+                    </span>
+                    <strong className="admin-feedback-message">
+                      {sessionErrors[session.id]}
+                    </strong>
+                  </div>
+                </div>
+              )}
+            </article>
+          ))}
+        </section>
+      ) : (
+        <section className="empty-state-panel">
+          <h3>No active voting sessions yet</h3>
+          <p>
+            Once an admin creates a future or live session, it will appear here
+            automatically.
+          </p>
+        </section>
       )}
+
+      <section className="insight-panel legal-panel">
+        <div>
+          <p className="page-kicker">Participation policy</p>
+          <h3>Important legal considerations</h3>
+          <p>
+            This voting application uses blockchain technology to ensure
+            transparency and immutability of records.
+          </p>
+        </div>
+        <ul className="legal-list">
+          <li>
+            <strong>Transparency:</strong> All transactions are stored publicly
+            on the blockchain and cannot be altered or deleted.
+          </li>
+          <li>
+            <strong>Privacy:</strong> Your wallet address is visible on the
+            blockchain, but no personal information is stored by this
+            application.
+          </li>
+          <li>
+            <strong>Data permanence:</strong> By participating, you acknowledge
+            that blockchain records are public, permanent, and cannot be
+            modified or deleted.
+          </li>
+        </ul>
+      </section>
     </div>
   );
 };

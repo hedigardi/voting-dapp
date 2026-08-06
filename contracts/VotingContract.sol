@@ -185,7 +185,11 @@ contract VotingContract is Ownable, ReentrancyGuard {
      * @notice Archive a voting session after it has ended.
      * @param sessionId The ID of the voting session.
      */
-    function archiveSession(uint sessionId) public sessionExists(sessionId) {
+    function archiveSession(uint sessionId)
+        public
+        sessionExists(sessionId)
+        onlySessionCreator(sessionId)
+    {
         VotingSession storage session = votingSessions[sessionId];
         require(block.timestamp > session.endTime, "Cannot archive active session");
         session.isActive = false;
